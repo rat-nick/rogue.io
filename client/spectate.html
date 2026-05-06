@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rogue.io — Spectate</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      /* ── Layout ───────────────────────────────────────────────────────── */
+      body, html { overflow: hidden; }
+
+      #spectate-layout {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* ── Canvas pane ──────────────────────────────────────────────────── */
+      #canvas-wrap {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      #canvas-wrap #game {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        z-index: 1;
+      }
+
+      /* Minimap — bottom-left inside the canvas pane */
+      #canvas-wrap #minimap {
+        position: absolute;
+        bottom: 16px; left: 16px;
+        right: auto;
+        width: 160px; height: 160px;
+        border: 2px solid rgba(255,255,255,0.2);
+        border-radius: 4px;
+        z-index: 10;
+        background: rgba(0,0,0,0.4);
+      }
+
+      /* Zoom controls — bottom-centre */
+      #zoom-controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(0,0,0,0.70);
+        border-radius: 20px;
+        padding: 5px 14px;
+        z-index: 10;
+      }
+      #zoom-controls button {
+        background: rgba(255,255,255,0.12);
+        border: none;
+        color: #fff;
+        width: 28px; height: 28px;
+        border-radius: 50%;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: background 0.15s;
+      }
+      #zoom-controls button:hover { background: rgba(255,255,255,0.28); }
+      #zoom-label {
+        min-width: 38px;
+        text-align: center;
+        font-size: 13px;
+        color: rgba(255,255,255,0.75);
+      }
+
+      /* Follow badge — top-left corner */
+      #follow-badge {
+        position: absolute;
+        top: 16px; left: 16px;
+        background: rgba(0,0,0,0.70);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        color: #4af;
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      /* ── Sidebar ──────────────────────────────────────────────────────── */
+      #sidebar {
+        width: 268px;
+        min-width: 268px;
+        background: #141414;
+        border-left: 1px solid #252525;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        z-index: 20;
+      }
+
+      #sidebar-header {
+        padding: 14px 16px;
+        font-weight: bold;
+        font-size: 15px;
+        border-bottom: 1px solid #252525;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #4af;
+        flex-shrink: 0;
+      }
+      #play-link {
+        color: rgba(255,255,255,0.45);
+        font-size: 12px;
+        text-decoration: none;
+        font-weight: normal;
+      }
+      #play-link:hover { color: #4af; }
+
+      /* Stats grid */
+      #stats-panel {
+        padding: 10px 16px;
+        border-bottom: 1px solid #252525;
+        flex-shrink: 0;
+      }
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 3px 0;
+        font-size: 13px;
+      }
+      .stat-key { color: rgba(255,255,255,0.45); }
+      .stat-val { color: #fff; font-variant-numeric: tabular-nums; }
+
+      /* Follow panel */
+      #follow-panel {
+        padding: 10px 16px;
+        border-bottom: 1px solid #252525;
+        flex-shrink: 0;
+      }
+      .section-title {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.35);
+        margin-bottom: 6px;
+      }
+      #follow-label {
+        color: rgba(255,255,255,0.65);
+        font-size: 13px;
+      }
+
+      /* Player list */
+      #player-list-wrap {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 0 4px;
+      }
+      #player-list-wrap .section-title { padding: 0 16px; margin-bottom: 4px; }
+      #player-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 2px 8px;
+      }
+      /* Thin scrollbar */
+      #player-list::-webkit-scrollbar { width: 4px; }
+      #player-list::-webkit-scrollbar-track { background: transparent; }
+      #player-list::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.15);
+        border-radius: 2px;
+      }
+
+      /* Player rows */
+      .player-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        position: relative;
+        overflow: hidden;
+        transition: background 0.1s;
+      }
+      .player-row:hover { background: rgba(255,255,255,0.07); }
+      .player-row.followed { background: rgba(68,170,255,0.12); }
+
+      /* Left accent bar — visible only when followed */
+      .player-row::before {
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 3px;
+        background: var(--player-color, #4af);
+        opacity: 0;
+        border-radius: 0 2px 2px 0;
+        transition: opacity 0.15s;
+      }
+      .player-row.followed::before { opacity: 1; }
+
+      .p-icon  { font-size: 11px; opacity: 0.75; flex-shrink: 0; }
+      .p-name  {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(255,255,255,0.9);
+      }
+      .p-cells {
+        color: rgba(255,255,255,0.32);
+        font-size: 10px;
+        min-width: 18px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+      .p-mass {
+        color: rgba(255,255,255,0.75);
+        text-align: right;
+        min-width: 38px;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+      }
+      /* Mass bar — thin line at the bottom of each row */
+      .p-bar {
+        position: absolute;
+        bottom: 0; left: 0;
+        height: 2px;
+        background: var(--player-color, #4af);
+        opacity: 0.30;
+        transition: width 0.4s ease;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="spectate-layout">
+
+      <!-- ── Canvas pane ── -->
+      <div id="canvas-wrap">
+        <canvas id="game"></canvas>
+        <canvas id="minimap" width="160" height="160"></canvas>
+
+        <div id="follow-badge">Overview</div>
+
+        <div id="zoom-controls">
+          <button id="zoom-out" title="Zoom out (scroll down)">−</button>
+          <span id="zoom-label">1×</span>
+          <button id="zoom-in"  title="Zoom in (scroll up)">+</button>
+        </div>
+      </div>
+
+      <!-- ── Sidebar ── -->
+      <div id="sidebar">
+        <div id="sidebar-header">
+          <span>👁 SPECTATE</span>
+          <a href="index.html" id="play-link">Play →</a>
+        </div>
+
+        <!-- Global stats -->
+        <div id="stats-panel">
+          <div class="stat-row">
+            <span class="stat-key">TPS</span>
+            <span class="stat-val" id="stats-tps">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Bots</span>
+            <span class="stat-val" id="stats-bots">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Players</span>
+            <span class="stat-val" id="stats-players">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Food</span>
+            <span class="stat-val" id="stats-food">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Tick</span>
+            <span class="stat-val" id="stats-tick">—</span>
+          </div>
+        </div>
+
+        <!-- Currently followed entity -->
+        <div id="follow-panel">
+          <div class="section-title">FOLLOWING</div>
+          <div id="follow-label">— Overview —</div>
+          <div id="follow-stats" style="display:none; margin-top:6px">
+            <div class="stat-row">
+              <span class="stat-key">Mass</span>
+              <span class="stat-val" id="follow-mass">—</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-key">Cells</span>
+              <span class="stat-val" id="follow-cells">—</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-key">Rank</span>
+              <span class="stat-val" id="follow-rank">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scrollable player / bot list -->
+        <div id="player-list-wrap">
+          <div class="section-title">
+            PLAYERS <span id="player-count"></span>
+          </div>
+          <div id="player-list"></div>
+        </div>
+      </div><!-- /sidebar -->
+    </div><!-- /spectate-layout -->
+
+    <script src="lib/msgpack.min.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/minimap.js"></script>
+    <script src="js/spectate_viewport.js"></script>
+    <script src="js/spectate.js"></script>
+  </body>
+</html>

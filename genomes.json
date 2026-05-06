@@ -1,0 +1,426 @@
+{
+  "generation": 80,
+  "total_deaths": 30,
+  "pool": [
+    {
+      "genome": {
+        "food_seek_radius": 3861.0015601318923,
+        "threat_flee_radius": 342.04670876102693,
+        "prey_chase_radius": 463.3735598923938,
+        "flee_mass_ratio": 3.333758342750775,
+        "chase_mass_ratio": 0.9191628729033442,
+        "split_mass_threshold": 325.6654576680544,
+        "wander_interval": 4.4434303975815,
+        "split_cooldown": 56.28376496049877
+      },
+      "fitness": 59.45,
+      "generation": 51
+    },
+    {
+      "genome": {
+        "food_seek_radius": 3875.938629055318,
+        "threat_flee_radius": 1228.090024159609,
+        "prey_chase_radius": 1623.0298237481823,
+        "flee_mass_ratio": 1.8103005422422536,
+        "chase_mass_ratio": 0.7223325349716876,
+        "split_mass_threshold": 660.9212262131795,
+        "wander_interval": 8.934870931086005,
+        "split_cooldown": 52.7998596342301
+      },
+      "fitness": 66.25,
+      "generation": 52
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1434.583915527094,
+        "threat_flee_radius": 1987.4906663693985,
+        "prey_chase_radius": 2995.8044613446395,
+        "flee_mass_ratio": 3.143240125938971,
+        "chase_mass_ratio": 0.20812325179898628,
+        "split_mass_threshold": 711.9361239761831,
+        "wander_interval": 5.00069578101411,
+        "split_cooldown": 35.49528137448979
+      },
+      "fitness": 81.92,
+      "generation": 53
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1735.5839049965723,
+        "threat_flee_radius": 221.87580142239912,
+        "prey_chase_radius": 3513.1222294800186,
+        "flee_mass_ratio": 4.186714747311451,
+        "chase_mass_ratio": 0.7495211863090266,
+        "split_mass_threshold": 196.07386076488123,
+        "wander_interval": 9.45666166437587,
+        "split_cooldown": 30.392777873367606
+      },
+      "fitness": 128.39,
+      "generation": 54
+    },
+    {
+      "genome": {
+        "food_seek_radius": 3563.4304739950667,
+        "threat_flee_radius": 2776.995254830925,
+        "prey_chase_radius": 3486.1484865153648,
+        "flee_mass_ratio": 3.5530262828644927,
+        "chase_mass_ratio": 0.22970904756119886,
+        "split_mass_threshold": 172.2881648669763,
+        "wander_interval": 5.524475634543621,
+        "split_cooldown": 58.44693182080719
+      },
+      "fitness": 121.51,
+      "generation": 55
+    },
+    {
+      "genome": {
+        "food_seek_radius": 3159.3416158630607,
+        "threat_flee_radius": 1603.0350202645182,
+        "prey_chase_radius": 3679.722498012904,
+        "flee_mass_ratio": 4.435134081702401,
+        "chase_mass_ratio": 0.785446682251907,
+        "split_mass_threshold": 561.4724457396313,
+        "wander_interval": 9.90814919430063,
+        "split_cooldown": 29.32654360673831
+      },
+      "fitness": 113.15,
+      "generation": 56
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1453.9335270378126,
+        "threat_flee_radius": 1478.5781250233645,
+        "prey_chase_radius": 2424.3536541980097,
+        "flee_mass_ratio": 4.087954844757574,
+        "chase_mass_ratio": 0.3335863656833362,
+        "split_mass_threshold": 223.45698023736148,
+        "wander_interval": 4.888321949437898,
+        "split_cooldown": 37.44453366932039
+      },
+      "fitness": 153.81,
+      "generation": 57
+    },
+    {
+      "genome": {
+        "food_seek_radius": 574.7585011805377,
+        "threat_flee_radius": 3687.967899808868,
+        "prey_chase_radius": 3411.3515305599267,
+        "flee_mass_ratio": 4.887640814181383,
+        "chase_mass_ratio": 0.10241085767652532,
+        "split_mass_threshold": 246.2164544782172,
+        "wander_interval": 3.5751255211768633,
+        "split_cooldown": 38.38651327392435
+      },
+      "fitness": 224.25,
+      "generation": 58
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1286.2781970441076,
+        "threat_flee_radius": 1987.4906663693985,
+        "prey_chase_radius": 2995.8044613446395,
+        "flee_mass_ratio": 3.143240125938971,
+        "chase_mass_ratio": 0.20812325179898628,
+        "split_mass_threshold": 711.9361239761831,
+        "wander_interval": 6.599660973908978,
+        "split_cooldown": 35.49528137448979
+      },
+      "fitness": 101.28999999999999,
+      "generation": 59
+    },
+    {
+      "genome": {
+        "food_seek_radius": 3710.856579125671,
+        "threat_flee_radius": 2211.6314598337663,
+        "prey_chase_radius": 474.8783202637036,
+        "flee_mass_ratio": 3.4498825118455514,
+        "chase_mass_ratio": 0.3720747718216876,
+        "split_mass_threshold": 711.4264854124949,
+        "wander_interval": 1.6147305859466874,
+        "split_cooldown": 10.091403201944596
+      },
+      "fitness": 115.83,
+      "generation": 60
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1761.419715349194,
+        "threat_flee_radius": 2650.3218978160553,
+        "prey_chase_radius": 1944.6488207152422,
+        "flee_mass_ratio": 2.470585970549702,
+        "chase_mass_ratio": 0.11979601893038005,
+        "split_mass_threshold": 766.24752314346,
+        "wander_interval": 7.76984076583157,
+        "split_cooldown": 19.43190012382598
+      },
+      "fitness": 179.87,
+      "generation": 61
+    },
+    {
+      "genome": {
+        "food_seek_radius": 2315.081444121346,
+        "threat_flee_radius": 1565.9462963193985,
+        "prey_chase_radius": 3612.286733610196,
+        "flee_mass_ratio": 1.228188474061607,
+        "chase_mass_ratio": 0.2752006859944881,
+        "split_mass_threshold": 386.79161570530005,
+        "wander_interval": 4.899478682135003,
+        "split_cooldown": 56.20499933515474
+      },
+      "fitness": 195.0,
+      "generation": 62
+    },
+    {
+      "genome": {
+        "food_seek_radius": 637.5315300705961,
+        "threat_flee_radius": 1639.7156385710946,
+        "prey_chase_radius": 2206.4004274892036,
+        "flee_mass_ratio": 3.748093733011504,
+        "chase_mass_ratio": 0.7637409670826807,
+        "split_mass_threshold": 304.52105525437224,
+        "wander_interval": 7.923757721891002,
+        "split_cooldown": 42.86562774562471
+      },
+      "fitness": 219.74,
+      "generation": 63
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1453.9335270378126,
+        "threat_flee_radius": 200.0,
+        "prey_chase_radius": 2026.6800594220335,
+        "flee_mass_ratio": 4.512110334283565,
+        "chase_mass_ratio": 0.3335863656833362,
+        "split_mass_threshold": 271.43767787393455,
+        "wander_interval": 4.778438190370635,
+        "split_cooldown": 37.44453366932039
+      },
+      "fitness": 122.43,
+      "generation": 64
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1646.9739932364726,
+        "threat_flee_radius": 221.87580142239912,
+        "prey_chase_radius": 3513.1222294800186,
+        "flee_mass_ratio": 4.186714747311451,
+        "chase_mass_ratio": 0.7495211863090266,
+        "split_mass_threshold": 159.67243498415348,
+        "wander_interval": 9.45666166437587,
+        "split_cooldown": 30.392777873367606
+      },
+      "fitness": 140.79,
+      "generation": 65
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1735.5839049965723,
+        "threat_flee_radius": 2776.995254830925,
+        "prey_chase_radius": 3486.1484865153648,
+        "flee_mass_ratio": 3.5530262828644927,
+        "chase_mass_ratio": 0.22970904756119886,
+        "split_mass_threshold": 172.2881648669763,
+        "wander_interval": 9.45666166437587,
+        "split_cooldown": 58.44693182080719
+      },
+      "fitness": 136.57,
+      "generation": 66
+    },
+    {
+      "genome": {
+        "food_seek_radius": 574.7585011805377,
+        "threat_flee_radius": 1478.5781250233645,
+        "prey_chase_radius": 2424.3536541980097,
+        "flee_mass_ratio": 4.887640814181383,
+        "chase_mass_ratio": 0.10241085767652532,
+        "split_mass_threshold": 159.01392784412587,
+        "wander_interval": 4.888321949437898,
+        "split_cooldown": 38.38651327392435
+      },
+      "fitness": 151.66,
+      "generation": 67
+    },
+    {
+      "genome": {
+        "food_seek_radius": 2302.663306201446,
+        "threat_flee_radius": 853.7251968775561,
+        "prey_chase_radius": 1567.9319739824562,
+        "flee_mass_ratio": 3.3869032037129383,
+        "chase_mass_ratio": 0.668753133051253,
+        "split_mass_threshold": 119.63741112451955,
+        "wander_interval": 2.6205510126214313,
+        "split_cooldown": 56.92689047782213
+      },
+      "fitness": 274.2856658017589,
+      "generation": 68
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1557.3059922129191,
+        "threat_flee_radius": 2602.810901819814,
+        "prey_chase_radius": 3448.6153184751834,
+        "flee_mass_ratio": 2.080398894808207,
+        "chase_mass_ratio": 0.9342635988745797,
+        "split_mass_threshold": 51.38790921429225,
+        "wander_interval": 4.514878889148919,
+        "split_cooldown": 11.525003585080185
+      },
+      "fitness": 267.68007633676797,
+      "generation": 69
+    },
+    {
+      "genome": {
+        "food_seek_radius": 2282.678368077775,
+        "threat_flee_radius": 3711.949187999748,
+        "prey_chase_radius": 3278.5003230508105,
+        "flee_mass_ratio": 4.785098508510752,
+        "chase_mass_ratio": 0.3973095768136812,
+        "split_mass_threshold": 63.966934652177116,
+        "wander_interval": 0.7082313952216148,
+        "split_cooldown": 56.67011521152539
+      },
+      "fitness": 289.21000000000004,
+      "generation": 70
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1476.7909642460804,
+        "threat_flee_radius": 1465.3215901711985,
+        "prey_chase_radius": 3704.979781164239,
+        "flee_mass_ratio": 4.314680623654057,
+        "chase_mass_ratio": 0.7103022475733793,
+        "split_mass_threshold": 206.6063745319063,
+        "wander_interval": 6.549854220573932,
+        "split_cooldown": 16.323955925580822
+      },
+      "fitness": 651.942948154931,
+      "generation": 71
+    },
+    {
+      "genome": {
+        "food_seek_radius": 593.697269830405,
+        "threat_flee_radius": 1478.5781250233645,
+        "prey_chase_radius": 2206.4004274892036,
+        "flee_mass_ratio": 3.748093733011504,
+        "chase_mass_ratio": 0.3769498217560194,
+        "split_mass_threshold": 223.45698023736148,
+        "wander_interval": 7.923757721891002,
+        "split_cooldown": 37.44453366932039
+      },
+      "fitness": 80.55,
+      "generation": 72
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1453.9335270378126,
+        "threat_flee_radius": 1478.5781250233645,
+        "prey_chase_radius": 2105.0294407458373,
+        "flee_mass_ratio": 4.087954844757574,
+        "chase_mass_ratio": 0.2304366764253091,
+        "split_mass_threshold": 223.45698023736148,
+        "wander_interval": 4.888321949437898,
+        "split_cooldown": 37.44453366932039
+      },
+      "fitness": 143.19,
+      "generation": 73
+    },
+    {
+      "genome": {
+        "food_seek_radius": 3565.0752405073317,
+        "threat_flee_radius": 431.39979209288094,
+        "prey_chase_radius": 2570.4915498160935,
+        "flee_mass_ratio": 3.9726002915142704,
+        "chase_mass_ratio": 0.790036039489482,
+        "split_mass_threshold": 151.15858366021388,
+        "wander_interval": 5.618596876012756,
+        "split_cooldown": 54.50327725362481
+      },
+      "fitness": 346.22,
+      "generation": 74
+    },
+    {
+      "genome": {
+        "food_seek_radius": 592.1292896133151,
+        "threat_flee_radius": 3687.967899808868,
+        "prey_chase_radius": 3411.3515305599267,
+        "flee_mass_ratio": 4.887640814181383,
+        "chase_mass_ratio": 0.668753133051253,
+        "split_mass_threshold": 246.2164544782172,
+        "wander_interval": 3.5751255211768633,
+        "split_cooldown": 56.92689047782213
+      },
+      "fitness": 91.72,
+      "generation": 75
+    },
+    {
+      "genome": {
+        "food_seek_radius": 2392.2195336039144,
+        "threat_flee_radius": 1581.5224218880853,
+        "prey_chase_radius": 2063.9139971241493,
+        "flee_mass_ratio": 3.27497501986344,
+        "chase_mass_ratio": 0.47944950961374166,
+        "split_mass_threshold": 428.3512332733984,
+        "wander_interval": 9.290323876202192,
+        "split_cooldown": 28.107188453229096
+      },
+      "fitness": 298.11423291790925,
+      "generation": 76
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1735.5839049965723,
+        "threat_flee_radius": 221.87580142239912,
+        "prey_chase_radius": 3513.1222294800186,
+        "flee_mass_ratio": 4.186714747311451,
+        "chase_mass_ratio": 0.7495211863090266,
+        "split_mass_threshold": 196.07386076488123,
+        "wander_interval": 9.45666166437587,
+        "split_cooldown": 30.392777873367606
+      },
+      "fitness": 216.16,
+      "generation": 77
+    },
+    {
+      "genome": {
+        "food_seek_radius": 637.5315300705961,
+        "threat_flee_radius": 1639.7156385710946,
+        "prey_chase_radius": 1920.6198375572817,
+        "flee_mass_ratio": 3.748093733011504,
+        "chase_mass_ratio": 0.7637409670826807,
+        "split_mass_threshold": 304.52105525437224,
+        "wander_interval": 7.923757721891002,
+        "split_cooldown": 42.86562774562471
+      },
+      "fitness": 144.92000000000002,
+      "generation": 78
+    },
+    {
+      "genome": {
+        "food_seek_radius": 1761.419715349194,
+        "threat_flee_radius": 3275.8994045802838,
+        "prey_chase_radius": 3704.979781164239,
+        "flee_mass_ratio": 4.314680623654057,
+        "chase_mass_ratio": 0.7103022475733793,
+        "split_mass_threshold": 206.6063745319063,
+        "wander_interval": 6.549854220573932,
+        "split_cooldown": 19.43190012382598
+      },
+      "fitness": 95.87,
+      "generation": 79
+    },
+    {
+      "genome": {
+        "food_seek_radius": 3799.2559004739983,
+        "threat_flee_radius": 1160.642303527922,
+        "prey_chase_radius": 787.5638292365539,
+        "flee_mass_ratio": 3.1661640943082876,
+        "chase_mass_ratio": 0.5639702901992929,
+        "split_mass_threshold": 529.0602805187011,
+        "wander_interval": 6.761480964578593,
+        "split_cooldown": 58.01918648163411
+      },
+      "fitness": 401.6543184166333,
+      "generation": 80
+    }
+  ]
+}
