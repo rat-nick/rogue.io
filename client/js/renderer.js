@@ -9,11 +9,17 @@ const Renderer = (() => {
     '#c8ffc8', '#c8c8ff', '#ffffc8', '#c8e6ff',
   ];
 
-  // Map player_id -> HSL color string (cached)
+  // Map player_id -> HSL color string (cached; cleared when hue data arrives)
   const playerColors = new Map();
+  const playerHues   = new Map(); // track which hue was used to build the cached color
   function getPlayerColor(playerId) {
-    if (!playerColors.has(playerId)) {
-      const hue = (playerId * 137.508) % 360;   // golden angle distribution
+    // Use genome-derived hue if available, otherwise golden-angle fallback
+    const hue = State.getHue(playerId) >= 0
+      ? State.getHue(playerId)
+      : (playerId * 137.508) % 360;
+    // Invalidate cache if hue changed (e.g. hue arrived after first render)
+    if (playerHues.get(playerId) !== hue) {
+      playerHues.set(playerId, hue);
       playerColors.set(playerId, `hsl(${hue}, 70%, 55%)`);
     }
     return playerColors.get(playerId);
@@ -82,6 +88,44 @@ const Renderer = (() => {
         ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
       }
       ctx.fill();
+    }
+  }
+
+  function drawViruses(vp) {
+    const viruses = State.viruses;
+    const rect = vp.getVisibleRect();
+
+    ctx.fillStyle = '#33ff33';
+    ctx.strokeStyle = '#00cc00';
+    ctx.lineWidth = 3 / vp.scale;
+
+    for (const [, v] of viruses) {
+      // Cull viruses outside viewport
+      if (v.x < rect.x - 150 || v.x > rect.x + rect.w + 150 ||
+          v.y < rect.y - 150 || v.y > rect.y + rect.h + 150) continue;
+
+      // Draw spiky virus shape
+      const r = 100; // Fixed radius for viruses
+      const spikes = 12;
+      ctx.beginPath();
+      for (let i = 0; i < spikes; i++) {
+        const angle = (i / spikes) * Math.PI * 2;
+        const nextAngle = ((i + 1) / spikes) * Math.PI * 2;
+        const midAngle = (angle + nextAngle) / 2;
+        
+        // Outer spike
+        const outerX = v.x + Math.cos(midAngle) * r * 1.3;
+        const outerY = v.y + Math.sin(midAngle) * r * 1.3;
+        
+        if (i === 0) {
+          ctx.moveTo(v.x + Math.cos(angle) * r, v.y + Math.sin(angle) * r);
+        }
+        ctx.lineTo(outerX, outerY);
+        ctx.lineTo(v.x + Math.cos(nextAngle) * r, v.y + Math.sin(nextAngle) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
   }
 
@@ -159,6 +203,7 @@ const Renderer = (() => {
 
     drawGrid(vp);
     drawFood(vp);
+    drawViruses(vp);
     drawCells(vp, alpha);
 
     ctx.restore();

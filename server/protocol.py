@@ -11,6 +11,9 @@ MSG_INIT = 0x10
 MSG_TICK = 0x11
 MSG_DEAD = 0x12
 
+# Manual next-generation trigger (client -> server)
+MSG_NEXT_GEN = 0x25
+
 # Client -> Server input format: !BffB (10 bytes)
 # B = msg_type (0x01)
 # f = mouse_world_x
@@ -56,8 +59,10 @@ def encode_tick(
     tick_num: int,
     own_cell_ids: list[int],
     visible_cells: list,        # list of Cell objects visible to this player
-    food_new: list[Food],       # food spawned this tick visible to player
+    food_new: list,             # Food objects spawned this tick visible to player
     food_removed: list[int],    # food IDs eaten this tick (all clients remove these)
+    virus_new: list,            # Virus objects spawned this tick
+    virus_removed: list[int],   # virus IDs removed this tick
     known_player_ids: set[int], # player IDs whose names this client already knows
     player_map: dict[int, Any], # player_id -> Player (for name lookup)
     leaderboard: list | None,   # [[name, score], ...] or None
@@ -74,15 +79,19 @@ def encode_tick(
             known_player_ids.add(pid)
             p = player_map.get(pid)
             name = p.name if p else ''
+            hue  = p.hue  if p else -1
         else:
             name = None
-        cells_out.append([c.id, round(c.x, 1), round(c.y, 1), round(c.mass, 2), pid, name])
+            hue  = None
+        cells_out.append([c.id, round(c.x, 1), round(c.y, 1), round(c.mass, 2), pid, name, hue])
 
     food_out = [[f.id, round(f.x, 1), round(f.y, 1), f.color_idx, round(f.mass, 1)] for f in food_new]
+    
+    virus_out = [[v.id, round(v.x, 1), round(v.y, 1), round(v.mass, 1)] for v in virus_new]
 
     lb_out = [[name, score] for name, score in leaderboard] if leaderboard is not None else None
 
-    payload = [MSG_TICK, tick_num, own_cell_ids, cells_out, food_out, food_removed, lb_out]
+    payload = [MSG_TICK, tick_num, own_cell_ids, cells_out, food_out, food_removed, virus_out, virus_removed, lb_out]
     return msgpack.packb(payload, use_bin_type=True)
 
 
@@ -130,3 +139,40 @@ def encode_stats(
 ) -> bytes:
     """Encode a stats snapshot for spectators."""
     return msgpack.packb([MSG_STATS, tick_num, players_info, total_food], use_bin_type=True)
+
+
+# Training-mode stats packet
+MSG_TRAINING_STATS = 0x24  # server -> training viewer
+
+
+def encode_training_stats(
+    tick_num: int,
+    generation: int,
+    time_remaining: float,
+    pop_size: int,
+    top_fitness: float,
+    avg_fitness: float,
+    best_mass: float,
+    avg_mass: float,
+    total_deaths: int,
+    players_info: list,  # same format as encode_stats: [[id, name, mass, cx, cy, cell_count, is_bot], ...]
+    total_food: int,
+) -> bytes:
+    """Encode a training-mode stats packet for the training viewer."""
+    return msgpack.packb(
+        [
+            MSG_TRAINING_STATS,
+            tick_num,
+            generation,
+            round(time_remaining, 1),
+            pop_size,
+            round(top_fitness, 1),
+            round(avg_fitness, 1),
+            round(best_mass, 1),
+            round(avg_mass, 1),
+            total_deaths,
+            players_info,
+            total_food,
+        ],
+        use_bin_type=True,
+    )

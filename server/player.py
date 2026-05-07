@@ -32,7 +32,7 @@ class Cell:
 
     @property
     def speed(self) -> float:
-        return config.BASE_SPEED / (self.mass ** config.SPEED_EXPONENT)
+        return max(config.MIN_SPEED, config.BASE_SPEED / (self.mass ** config.SPEED_EXPONENT))
 
 
 @dataclass
@@ -45,8 +45,12 @@ class Player:
     target_y: float = 0.0
     split_pending: bool = False
     eject_pending: bool = False
+    hue: int = -1       # genetic hue (0-359); -1 = derive from player_id on client
     # name caching: player IDs whose names have been sent to this client
     known_player_ids: set[int] = field(default_factory=set)
+    # delta tracking for food and viruses
+    sent_food_ids: set[int] = field(default_factory=set)
+    sent_virus_ids: set[int] = field(default_factory=set)
     # food IDs already sent to this client (delta tracking)
     sent_food_ids: set[int] = field(default_factory=set)
 

@@ -14,6 +14,8 @@ class Food:
     color_idx: int
     mass: float
     is_remnant: bool = False
+    vx: float = 0.0  # velocity for ejected mass
+    vy: float = 0.0
 
 
 class FoodManager:
@@ -49,13 +51,14 @@ class FoodManager:
             self._grid.insert(fid, x, y)
             self._new_this_tick.append(fid)
 
-    def spawn_ejected(self, x: float, y: float, color_idx: int, mass: float) -> None:
-        """Spawn a single food pellet (used for ejected mass)."""
+    def spawn_ejected(self, x: float, y: float, color_idx: int, mass: float, vx: float = 0.0, vy: float = 0.0) -> int:
+        """Spawn a single food pellet (used for ejected mass). Returns food ID."""
         fid = self._alloc_id()
-        food = Food(id=fid, x=x, y=y, color_idx=color_idx, mass=mass)
+        food = Food(id=fid, x=x, y=y, color_idx=color_idx, mass=mass, vx=vx, vy=vy)
         self._food[fid] = food
         self._grid.insert(fid, x, y)
         self._new_this_tick.append(fid)
+        return fid
 
     def spawn_remnant(self, x: float, y: float, color_idx: int, mass: float) -> None:
         fid = self._alloc_id()
@@ -65,13 +68,33 @@ class FoodManager:
         self._new_this_tick.append(fid)
 
     def tick_decay(self, dt: float) -> None:
+        """Update food decay and ejected mass physics."""
         to_remove: list[int] = []
         for fid, food in self._food.items():
-            if not food.is_remnant:
-                continue
-            food.mass *= (1.0 - config.REMNANT_DECAY_RATE * dt)
-            if food.mass < config.REMNANT_MIN_MASS:
-                to_remove.append(fid)
+            # Decay remnants
+            if food.is_remnant:
+                food.mass *= (1.0 - config.REMNANT_DECAY_RATE * dt)
+                if food.mass < config.REMNANT_MIN_MASS:
+                    to_remove.append(fid)
+            
+            # Update ejected mass positions and decelerate
+            if food.vx != 0.0 or food.vy != 0.0:
+                food.x += food.vx * dt
+                food.y += food.vy * dt
+                # Clamp to world bounds
+                food.x = max(0.0, min(config.WORLD_W, food.x))
+                food.y = max(0.0, min(config.WORLD_H, food.y))
+                # Decelerate
+                decel_factor = max(0.0, 1.0 - config.EJECT_DECEL * dt)
+                food.vx *= decel_factor
+                food.vy *= decel_factor
+                # Stop when very slow
+                if abs(food.vx) < 1.0 and abs(food.vy) < 1.0:
+                    food.vx = 0.0
+                    food.vy = 0.0
+                # Update grid position
+                self._grid.move(fid, food.x, food.y)
+        
         for fid in to_remove:
             self.eat(fid)
 

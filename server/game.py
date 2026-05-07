@@ -11,10 +11,11 @@ from . import config
 from . import physics
 from . import protocol
 from .bot import BotController, NullWebSocket
-from .genetics import GenomePool, random_genome
+from .genetics import GenomePool, random_genome, genome_hue
 from .food import FoodManager
 from .player import Cell, Player
 from .spatial import SpatialGrid
+from .virus import VirusManager
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,13 @@ class GameWorld:
         # Spatial grids
         self.cell_grid = SpatialGrid()
         self.food_grid = SpatialGrid()
+        self.virus_grid = SpatialGrid()
 
         # Food manager
         self.food_mgr = FoodManager(self.food_grid)
+        
+        # Virus manager
+        self.virus_mgr = VirusManager(self.virus_grid)
 
         # Tick counter
         self.tick_counter = 0
@@ -64,6 +69,7 @@ class GameWorld:
         # Genetic algorithm
         self._genome_pool: GenomePool = GenomePool.load(config.NEAT_SAVE_PATH)
         self._bot_death_count: int = 0
+        self._burst_elapsed: float = 0.0  # seconds since last bot burst
 
         # Spectators: spec_id -> {ws, follow_id, zoom_idx, known_player_ids, sent_food_ids}
         self._spectators: dict[int, dict] = {}
@@ -77,6 +83,12 @@ class GameWorld:
         self.food_mgr.spawn_batch(config.FOOD_TARGET)
         # Flush delta so this initial food is not sent as "new this tick"
         self.food_mgr.flush_delta()
+
+    def seed_viruses(self) -> None:
+        """Spawn initial viruses in corners and random positions."""
+        self.virus_mgr.spawn_corners()
+        self.virus_mgr.respawn_to_target(config.VIRUS_TARGET)
+        self.virus_mgr.flush_delta()
 
     def seed_bots(self) -> None:
         """Spawn BOT_COUNT bots. Uses best genome from pool if available."""
@@ -137,7 +149,6 @@ class GameWorld:
             logger.debug(f"Player {player_id} connection error: {exc}")
         finally:
             self._remove_player(player_id)
-            self._spawn_bot()
             logger.info(f"Player {player_id} '{name}' disconnected")
 
     # ------------------------------------------------------------------
@@ -160,6 +171,7 @@ class GameWorld:
             else:
                 # We're behind; skip sleep but don't accumulate debt indefinitely
                 next_tick = loop.time()
+                await asyncio.sleep(0)  # yield to event loop so connections can be accepted
 
     async def _tick(self) -> None:
         dt = config.TICK_INTERVAL
@@ -191,10 +203,18 @@ class GameWorld:
             self.cell_grid.remove(cell_id)
             self.cell_map.pop(cell_id, None)
         physics.apply_merge_attraction(self.players, self.cell_grid, dt)
-        physics.update_merge_timers(self.players, self.cell_grid, self.food_mgr, dt)
+        physics.update_merge_timers(self.players, self.cell_grid, self.food_mgr, self.cell_map, dt)
         self.food_mgr.tick_decay(dt)
 
         physics.check_food_collisions(self.players, self.food_mgr, self.food_grid)
+        
+        # Check virus collisions
+        virus_split_ids = physics.check_virus_collisions(
+            self.players, self.virus_mgr, self.virus_grid,
+            self.cell_grid, self.cell_map, self.food_mgr, self._cell_id_counter
+        )
+        for cell_id in virus_split_ids:
+            self.cell_map.pop(cell_id, None)
 
         eaten_ids = physics.check_cell_collisions(self.players, self.cell_grid, self.cell_map)
         for cell_id in eaten_ids:
@@ -203,13 +223,19 @@ class GameWorld:
         # Handle splits and ejects
         for player in list(self.players.values()):
             physics.perform_split(player, self.cell_grid, self.cell_map, self._cell_id_counter)
-            physics.perform_eject(player, self.food_mgr, self.food_grid)
+            ejected_ids = physics.perform_eject(player, self.food_mgr, self.food_grid)
+            # Check if ejected mass feeds viruses
+            if ejected_ids:
+                physics.check_ejected_virus_feeding(ejected_ids, self.food_mgr, self.virus_mgr, self.virus_grid)
 
-        # Respawn dead players (no cells left)
+        # Handle dead players (no cells left)
         dead_players = [p for p in self.players.values() if not p.cells]
         for player in dead_players:
             if player.id in self._bot_ids:
-                # Record fitness, breed new genome, respawn
+                # Record fitness and remove bot from active world; refill happens on burst.
+                bs = self._bot_controller._state.get(player.id)
+                if bs is not None:
+                    bs['deaths'] += 1
                 genome, fitness = self._bot_controller.unregister(player.id)
                 if genome is not None:
                     self._genome_pool.add(genome, fitness)
@@ -221,15 +247,18 @@ class GameWorld:
                             f"deaths={self._genome_pool.total_deaths} "
                             f"pool_size={len(self._genome_pool._pool)}"
                         )
-                new_genome = self._genome_pool.breed()
-                self._respawn_player(player)
-                cx, cy = player.centroid
-                self._bot_controller.register(player.id, cx, cy, new_genome)
+                self._bot_ids.discard(player.id)
+                self.players.pop(player.id, None)
             else:
                 await self._send_dead(player, score=0, killer_name="")
                 self._respawn_player(player)
 
         # Food replenishment
+        
+        # Virus replenishment
+        virus_deficit = config.VIRUS_TARGET - self.virus_mgr.count()
+        if virus_deficit > 0:
+            self.virus_mgr.respawn_to_target(config.VIRUS_TARGET)
         deficit = config.FOOD_TARGET - self.food_mgr.count()
         if deficit > 0:
             self.food_mgr.spawn_batch(min(deficit, 50))
@@ -245,28 +274,71 @@ class GameWorld:
 
         # Get food delta ONCE
         food_new, food_removed = self.food_mgr.flush_delta()
+        # Get virus delta ONCE
+        virus_new, virus_removed = self.virus_mgr.flush_delta()
 
         # ---- Send tick packets ----
         send_tasks = []
         for player in list(self.players.values()):
             if player.id in self._bot_ids:
                 continue  # bots don't receive packets
-            pkt = self._build_tick_packet(player, food_removed, leaderboard)
+            pkt = self._build_tick_packet(player, food_removed, virus_removed, leaderboard)
             send_tasks.append(self._safe_send(player.websocket, pkt))
 
+        # ---- Bot burst spawning ----
+        self._burst_elapsed += dt
+        if self._burst_elapsed >= config.BOT_BURST_INTERVAL:
+            self._burst_elapsed = 0.0
+
+            # Cull bots below median fitness
+            bot_players = [self.players[pid] for pid in list(self._bot_ids) if pid in self.players]
+            if len(bot_players) >= 2:
+                fitnesses = sorted(self._bot_controller.current_fitness(p.id) for p in bot_players)
+                mid = len(fitnesses) // 2
+                median_fitness = (
+                    (fitnesses[mid - 1] + fitnesses[mid]) / 2.0
+                    if len(fitnesses) % 2 == 0
+                    else fitnesses[mid]
+                )
+                culled = 0
+                for player in bot_players:
+                    fitness = self._bot_controller.current_fitness(player.id)
+                    if fitness < median_fitness:
+                        genome, fitness = self._bot_controller.unregister(player.id)
+                        if genome is not None:
+                            self._genome_pool.add(genome, fitness)
+                            self._bot_death_count += 1
+                        # Clear cells so the player is removed from the world
+                        for cell in list(player.cells):
+                            self.cell_grid.remove(cell.id)
+                            self.cell_map.pop(cell.id, None)
+                        player.cells.clear()
+                        self._bot_ids.discard(player.id)
+                        self.players.pop(player.id, None)
+                        culled += 1
+                if culled:
+                    logger.info(
+                        f"Bot cull: removed {culled} bots below median fitness {median_fitness:.1f}"
+                    )
+
+            # Bot respawn disabled: do not fill slots after cull
+                    await asyncio.sleep(0)  # yield to event loop after each bot spawn
+                logger.info(f"Bot burst: spawned {count} bots (total={len(self._bot_ids)})")
         # ---- Send to spectators ----
         if self._spectators:
             stats_pkt = None
             if self.tick_counter % config.LEADERBOARD_INTERVAL == 0:
                 stats_pkt = self._build_stats_packet()
             for spec in list(self._spectators.values()):
-                tick_pkt = self._build_spectator_tick_packet(spec, food_removed, leaderboard)
+                tick_pkt = self._build_spectator_tick_packet(spec, food_removed, virus_removed, leaderboard)
                 send_tasks.append(self._safe_send(spec['ws'], tick_pkt))
                 if stats_pkt is not None:
                     send_tasks.append(self._safe_send(spec['ws'], stats_pkt))
 
         if send_tasks:
             await asyncio.gather(*send_tasks, return_exceptions=True)
+        else:
+            await asyncio.sleep(0)  # yield to event loop when no packets to send
 
     # ------------------------------------------------------------------
     # Packet building
@@ -276,6 +348,7 @@ class GameWorld:
         self,
         player: Player,
         food_removed_all: list[int],
+        virus_removed_all: list[int],
         leaderboard: list | None,
     ) -> bytes:
         # Viewport culling
@@ -299,6 +372,16 @@ class GameWorld:
                 if f is not None:
                     player.sent_food_ids.add(fid)
                     food_new_visible.append(f)
+        
+        # Send all viruses in viewport that this client hasn't seen yet
+        virus_new_visible = []
+        virus_viewport_ids = self.virus_grid.query_rect(vx, vy, vw, vh)
+        for vid in virus_viewport_ids:
+            if vid not in player.sent_virus_ids:
+                v = self.virus_mgr.get(vid)
+                if v is not None:
+                    player.sent_virus_ids.add(vid)
+                    virus_new_visible.append(v)
 
         own_cell_ids = [c.id for c in player.cells]
 
@@ -308,6 +391,8 @@ class GameWorld:
             visible_cells=visible_cells,
             food_new=food_new_visible,
             food_removed=food_removed_all,  # all clients must remove these
+            virus_new=virus_new_visible,
+            virus_removed=virus_removed_all,
             known_player_ids=player.known_player_ids,
             player_map=self.players,
             leaderboard=leaderboard,
@@ -357,6 +442,7 @@ class GameWorld:
         self,
         spec: dict,
         food_removed_all: list[int],
+        virus_removed_all: list[int],
         leaderboard: list | None,
     ) -> bytes:
         """Build a tick packet for a spectator, culled to their current view."""
@@ -382,12 +468,23 @@ class GameWorld:
                     if f is not None:
                         spec['sent_food_ids'].add(fid)
                         food_new_visible.append(f)
+            # Virus delta for this viewport
+            virus_new_visible = []
+            for vid in self.virus_grid.query_rect(vx, vy, vw, vh):
+                if vid not in spec.get('sent_virus_ids', set()):
+                    v = self.virus_mgr.get(vid)
+                    if v is not None:
+                        if 'sent_virus_ids' not in spec:
+                            spec['sent_virus_ids'] = set()
+                        spec['sent_virus_ids'].add(vid)
+                        virus_new_visible.append(v)
         else:
             # Overview: show entire world, skip food (too much data at once)
             vx, vy = 0.0, 0.0
             vw, vh = float(config.WORLD_W), float(config.WORLD_H)
             own_cell_ids = []
             food_new_visible = []
+            virus_new_visible = []
 
         visible_cell_ids = self.cell_grid.query_rect(vx, vy, vw, vh)
         visible_cells = [
@@ -402,6 +499,8 @@ class GameWorld:
             visible_cells=visible_cells,
             food_new=food_new_visible,
             food_removed=food_removed_all,
+            virus_new=virus_new_visible,
+            virus_removed=virus_removed_all,
             known_player_ids=spec['known_player_ids'],
             player_map=self.players,
             leaderboard=leaderboard,
@@ -438,7 +537,8 @@ class GameWorld:
         self._bot_ids.add(pid)
         x = random.uniform(config.WORLD_W * 0.05, config.WORLD_W * 0.95)
         y = random.uniform(config.WORLD_H * 0.05, config.WORLD_H * 0.95)
-        self._create_cell(bot, x, y, mass=20.0)
+        self._create_cell(bot, x, y, mass=10.0)
+        bot.hue = genome_hue(genome)
         self._bot_controller.register(pid, x, y, genome)
 
     def _spawn_player_replacing_bot(self, player_id: int, name: str, websocket) -> Player:

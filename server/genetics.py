@@ -1,94 +1,73 @@
 """
-Genetic algorithm for evolving bot behaviour.
+NEAT-based genome pool for evolving bot neural networks.
 
-Genome: 8 floats that parameterise the bot's decision-making.
-GenomePool: population of (genome, fitness) pairs with selection / crossover / mutation.
-Persistence: load/save as JSON.
+Each genome is a neat.DefaultGenome whose weights/topology are evolved by
+NEAT operators (crossover + mutation).  The network takes 97 sensory inputs
+and produces 4 action outputs — no hand-coded thresholds or decision trees.
+
+Input layout  (97 features):
+  per sector: [food_proximity, food_mass_norm,
+               prey_proximity, prey_smallness,
+               threat_proximity, threat_danger]
+
+Output layout (4):
+  [move_x, move_y, split_signal, eject_signal]  — tanh ∈ [-1, 1]
 """
 from __future__ import annotations
 
-import json
-import math
+import itertools
 import os
+import pickle
 import random
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+
+import neat
+from neat.innovation import InnovationTracker
 
 
 # ---------------------------------------------------------------------------
-# Gene definitions
+# NEAT config (loaded once at module import)
 # ---------------------------------------------------------------------------
 
-# Each gene: (min_value, max_value)
-GENE_BOUNDS: dict[str, tuple[float, float]] = {
-    'food_seek_radius':    (200.0,  4000.0),   # how far to scan for food
-    'threat_flee_radius':  (200.0,  4000.0),   # how far to detect threats
-    'prey_chase_radius':   (200.0,  4000.0),   # how far to detect chaseable prey
-    'flee_mass_ratio':     (1.05,   5.0),      # flee if enemy_mass > own * ratio
-    'chase_mass_ratio':    (0.1,    0.95),     # chase if prey_mass < own * ratio
-    'split_mass_threshold':(40.0,   800.0),    # split only above this own mass
-    'wander_interval':     (0.5,    10.0),     # seconds between wander target picks
-    'split_cooldown':      (4.0,    60.0),     # minimum seconds between splits
-}
+_CFG_PATH = os.path.join(os.path.dirname(__file__), 'neat.cfg')
+neat_config = neat.Config(
+    neat.DefaultGenome,
+    neat.DefaultReproduction,
+    neat.DefaultSpeciesSet,
+    neat.DefaultStagnation,
+    _CFG_PATH,
+)
+
+# Shared innovation tracker — must be attached to genome_config before any
+# genome is created or mutated.
+_innovation_tracker = InnovationTracker()
+neat_config.genome_config.innovation_tracker = _innovation_tracker
 
 
-@dataclass
-class BotGenome:
-    food_seek_radius:     float = 1000.0
-    threat_flee_radius:   float = 800.0
-    prey_chase_radius:    float = 800.0
-    flee_mass_ratio:      float = 1.3
-    chase_mass_ratio:     float = 0.7
-    split_mass_threshold: float = 150.0
-    wander_interval:      float = 3.0
-    split_cooldown:       float = 20.0
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(d: dict) -> 'BotGenome':
-        return BotGenome(**{k: float(v) for k, v in d.items() if k in GENE_BOUNDS})
+def random_genome() -> neat.DefaultGenome:
+    """Create a new randomly-initialised NEAT genome."""
+    g = neat.DefaultGenome(0)
+    g.configure_new(neat_config.genome_config)
+    return g
 
 
-def random_genome() -> BotGenome:
-    """Uniformly random genome within gene bounds."""
-    kwargs = {
-        gene: random.uniform(lo, hi)
-        for gene, (lo, hi) in GENE_BOUNDS.items()
-    }
-    return BotGenome(**kwargs)
-
-
-def _clamp_genome(g: BotGenome) -> BotGenome:
-    """Clamp all genes to their legal bounds."""
-    d = g.to_dict()
-    for gene, (lo, hi) in GENE_BOUNDS.items():
-        d[gene] = max(lo, min(hi, d[gene]))
-    return BotGenome.from_dict(d)
-
-
-def crossover(a: BotGenome, b: BotGenome) -> BotGenome:
-    """Uniform crossover: each gene is independently taken from a or b."""
-    da, db = a.to_dict(), b.to_dict()
-    child = {gene: (da[gene] if random.random() < 0.5 else db[gene])
-             for gene in GENE_BOUNDS}
-    return BotGenome.from_dict(child)
-
-
-def mutate(genome: BotGenome, rate: float = 0.25, std_fraction: float = 0.12) -> BotGenome:
+def genome_hue(genome: neat.DefaultGenome) -> int:
     """
-    Gaussian mutation.
-    Each gene is mutated with probability `rate`.
-    The perturbation is Gaussian with std = std_fraction * gene_range.
+    Derive a stable hue (0–359) from a genome's connection weights.
+
+    NEAT crossover averages/inherits weights from both parents, so bred siblings
+    have a mean weight close to their parents' — visually similar colours.
+    Mutation drifts the hue slowly over generations.
     """
-    d = genome.to_dict()
-    for gene, (lo, hi) in GENE_BOUNDS.items():
-        if random.random() < rate:
-            std = (hi - lo) * std_fraction
-            d[gene] = d[gene] + random.gauss(0.0, std)
-    return _clamp_genome(BotGenome.from_dict(d))
+    weights = [cg.weight for cg in genome.connections.values() if cg.enabled]
+    if not weights:
+        # No connections yet (fresh genome) — use genome key as fallback
+        return int(genome.key * 137.508) % 360
+    mean_w = sum(weights) / len(weights)   # roughly in [-3, 3] for NEAT defaults
+    # Map mean weight to [0, 360): clamp to [-3, 3] then scale
+    t = max(-3.0, min(3.0, mean_w))        # t ∈ [-3, 3]
+    hue = int((t + 3.0) / 6.0 * 360) % 360
+    return hue
 
 
 # ---------------------------------------------------------------------------
@@ -97,61 +76,89 @@ def mutate(genome: BotGenome, rate: float = 0.25, std_fraction: float = 0.12) ->
 
 _POOL_MAX_SIZE = 200
 _TOURNAMENT_K  = 3
-_ELITE_COUNT   = 10
 
 
 class GenomePool:
     """
-    Maintains a population of genomes with their fitness scores.
-    Supports tournament selection, crossover, and mutation to breed new genomes.
+    Maintains a population of NEAT genomes with their fitness scores.
+    Supports tournament selection + NEAT crossover/mutation to breed new genomes.
     """
 
     def __init__(self) -> None:
-        # List of {'genome': BotGenome, 'fitness': float, 'generation': int}
+        # List of {'genome': neat.DefaultGenome, 'fitness': float, 'generation': int}
         self._pool: list[dict] = []
+        self._key_counter: int = 1
         self.generation: int = 0
         self.total_deaths: int = 0
+        # Reset generation-level innovation deduplication on each new breeding round
+        _innovation_tracker.reset_generation()
 
     # ------------------------------------------------------------------
     # Population management
     # ------------------------------------------------------------------
 
-    def add(self, genome: BotGenome, fitness: float) -> None:
+    def _next_key(self) -> int:
+        k = self._key_counter
+        self._key_counter += 1
+        return k
+
+    def add(self, genome: neat.DefaultGenome, fitness: float) -> None:
         """Record a genome and its observed fitness."""
         self._pool.append({
             'genome':     genome,
             'fitness':    fitness,
             'generation': self.generation,
         })
-        # Keep pool bounded: always retain elites, trim the rest by fitness
         if len(self._pool) > _POOL_MAX_SIZE:
             self._pool.sort(key=lambda e: e['fitness'], reverse=True)
             self._pool = self._pool[:_POOL_MAX_SIZE]
         self.total_deaths += 1
 
-    def breed(self) -> BotGenome:
+    def breed(self) -> neat.DefaultGenome:
         """
-        Produce a new child genome.
-        Uses tournament selection to pick two parents, then crossover + mutation.
-        Falls back to a random genome if the pool is too small.
+        Produce a new child genome via tournament selection + NEAT crossover + mutation.
+        Falls back to a fresh random genome if the pool is too small.
         """
         self.generation += 1
+        _innovation_tracker.reset_generation()
         if len(self._pool) < 2:
-            return random_genome()
+            g = neat.DefaultGenome(self._next_key())
+            g.configure_new(neat_config.genome_config)
+            return g
 
-        parent_a = self._tournament_select()
-        parent_b = self._tournament_select()
-        child = crossover(parent_a, parent_b)
-        child = mutate(child)
+        e1 = self._tournament_select()
+        e2 = self._tournament_select()
+        parent1, parent2 = e1['genome'], e2['genome']
+        # neat.DefaultGenome.configure_crossover() uses .fitness to determine
+        # which parent is "dominant" (higher fitness → more genes inherited).
+        parent1.fitness = e1['fitness']
+        parent2.fitness = e2['fitness']
+
+        child = neat.DefaultGenome(self._next_key())
+        child.configure_crossover(parent1, parent2, neat_config.genome_config)
+        # Advance node_indexer past all node IDs inherited via crossover.
+        # Without this, mutate_add_node can generate an ID that already exists.
+        if child.nodes:
+            max_node = max(child.nodes.keys())
+            cfg = neat_config.genome_config
+            if cfg.node_indexer is None:
+                cfg.node_indexer = itertools.count(max_node + 1)
+            else:
+                # Drain until the counter is past max_node
+                cur = next(cfg.node_indexer)
+                if cur <= max_node:
+                    cfg.node_indexer = itertools.count(max_node + 1)
+                else:
+                    cfg.node_indexer = itertools.count(cur)
+        child.mutate(neat_config.genome_config)
         return child
 
-    def _tournament_select(self) -> BotGenome:
+    def _tournament_select(self) -> dict:
         k = min(_TOURNAMENT_K, len(self._pool))
         contestants = random.sample(self._pool, k)
-        winner = max(contestants, key=lambda e: e['fitness'])
-        return winner['genome']
+        return max(contestants, key=lambda e: e['fitness'])
 
-    def best(self, n: int = 5) -> list[tuple[float, BotGenome]]:
+    def best(self, n: int = 5) -> list[tuple[float, neat.DefaultGenome]]:
         """Return the top-n (fitness, genome) pairs."""
         sorted_pool = sorted(self._pool, key=lambda e: e['fitness'], reverse=True)
         return [(e['fitness'], e['genome']) for e in sorted_pool[:n]]
@@ -161,43 +168,37 @@ class GenomePool:
     # ------------------------------------------------------------------
 
     def save(self, path: str) -> None:
-        """Save pool to JSON. Atomic write via temp file."""
+        """Save pool to a pickle file. Atomic write via temp file."""
         data = {
-            'generation':   self.generation,
-            'total_deaths': self.total_deaths,
-            'pool': [
-                {
-                    'genome':     e['genome'].to_dict(),
-                    'fitness':    e['fitness'],
-                    'generation': e['generation'],
-                }
-                for e in self._pool
-            ],
+            'generation':          self.generation,
+            'total_deaths':        self.total_deaths,
+            'key_counter':         self._key_counter,
+            'innovation_counter':  _innovation_tracker.global_counter,
+            'pool':                self._pool,
         }
         tmp = path + '.tmp'
-        with open(tmp, 'w') as f:
-            json.dump(data, f, indent=2)
+        with open(tmp, 'wb') as f:
+            pickle.dump(data, f)
         os.replace(tmp, path)
 
     @staticmethod
     def load(path: str) -> 'GenomePool':
-        """Load pool from JSON. Returns an empty pool if file doesn't exist."""
+        """Load pool from a pickle file. Returns an empty pool if file doesn't exist or is corrupt."""
         pool = GenomePool()
         p = Path(path)
         if not p.exists():
             return pool
         try:
-            with open(p) as f:
-                data = json.load(f)
+            with open(p, 'rb') as f:
+                data = pickle.load(f)
             pool.generation   = int(data.get('generation', 0))
             pool.total_deaths = int(data.get('total_deaths', 0))
-            for e in data.get('pool', []):
-                genome = BotGenome.from_dict(e['genome'])
-                pool._pool.append({
-                    'genome':     genome,
-                    'fitness':    float(e['fitness']),
-                    'generation': int(e.get('generation', 0)),
-                })
+            pool._key_counter = int(data.get('key_counter', 1))
+            pool._pool        = data.get('pool', [])
+            # Restore innovation tracker counter so IDs stay monotonically increasing
+            saved_inno = data.get('innovation_counter', 0)
+            if saved_inno > _innovation_tracker.global_counter:
+                _innovation_tracker.global_counter = saved_inno
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning(f"Failed to load genome pool: {exc}")

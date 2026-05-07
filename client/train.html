@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>rogue.io — Training</title>
+    <link
+      rel="stylesheet"
+      href="style.css"
+    />
+    <style>
+      body,
+      html {
+        overflow: hidden;
+      }
+
+      #train-layout {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* ── Canvas pane ── */
+      #canvas-wrap {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+      }
+      #canvas-wrap #game {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+      #canvas-wrap #minimap {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        width: 160px;
+        height: 160px;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.4);
+      }
+
+      /* Zoom controls */
+      #zoom-controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 20px;
+        padding: 5px 14px;
+        z-index: 10;
+      }
+      #zoom-controls button {
+        background: rgba(255, 255, 255, 0.12);
+        border: none;
+        color: #fff;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }
+      #zoom-controls button:hover {
+        background: rgba(255, 255, 255, 0.28);
+      }
+      #zoom-label {
+        min-width: 38px;
+        text-align: center;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.75);
+      }
+
+      /* Follow badge */
+      #follow-badge {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        color: #fa4;
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      /* Next Generation button */
+      #next-gen-btn {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 20;
+        background: #222;
+        color: #fa4;
+        border: none;
+        border-radius: 18px;
+        padding: 8px 18px;
+        font-size: 15px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+        transition: background 0.15s;
+      }
+      #next-gen-btn:hover {
+        background: #333;
+      }
+
+      /* Generation banner — top-centre */
+      #gen-banner {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.75);
+        padding: 6px 18px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: bold;
+        color: #fa4;
+        pointer-events: none;
+        z-index: 10;
+        white-space: nowrap;
+      }
+
+      /* ── Sidebar ── */
+      #sidebar {
+        width: 268px;
+        min-width: 268px;
+        background: #141414;
+        border-left: 1px solid #252525;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        z-index: 20;
+      }
+      #sidebar-header {
+        padding: 14px 16px;
+        font-weight: bold;
+        font-size: 15px;
+        border-bottom: 1px solid #252525;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #fa4;
+        flex-shrink: 0;
+      }
+      #spectate-link {
+        color: rgba(255, 255, 255, 0.45);
+        font-size: 12px;
+        text-decoration: none;
+        font-weight: normal;
+      }
+      #spectate-link:hover {
+        color: #fa4;
+      }
+
+      /* Generation stats */
+      #gen-panel {
+        padding: 10px 16px;
+        border-bottom: 1px solid #252525;
+        flex-shrink: 0;
+        background: rgba(250, 170, 0, 0.04);
+      }
+      .section-title {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.35);
+        margin-bottom: 6px;
+      }
+
+      /* Stats grid */
+      #stats-panel {
+        padding: 10px 16px;
+        border-bottom: 1px solid #252525;
+        flex-shrink: 0;
+      }
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 3px 0;
+        font-size: 13px;
+      }
+      .stat-key {
+        color: rgba(255, 255, 255, 0.45);
+      }
+      .stat-val {
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat-val.highlight {
+        color: #fa4;
+      }
+
+      /* Progress bar for time remaining */
+      #time-bar-wrap {
+        margin-top: 4px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      #time-bar {
+        height: 100%;
+        background: #fa4;
+        transition: width 0.5s linear;
+        width: 100%;
+      }
+
+      /* Follow panel */
+      #follow-panel {
+        padding: 10px 16px;
+        border-bottom: 1px solid #252525;
+        flex-shrink: 0;
+      }
+      #follow-label {
+        color: rgba(255, 255, 255, 0.65);
+        font-size: 13px;
+      }
+      #follow-stats {
+        margin-top: 6px;
+      }
+
+      /* Bot list */
+      #player-list-wrap {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 0 4px;
+      }
+      #player-list-wrap .section-title {
+        padding: 0 16px;
+        margin-bottom: 4px;
+      }
+      #player-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 2px 8px;
+      }
+      #player-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      #player-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #player-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+      }
+      .player-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        position: relative;
+        overflow: hidden;
+        transition: background 0.1s;
+      }
+      .player-row:hover {
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .player-row.followed {
+        background: rgba(250, 170, 0, 0.1);
+      }
+      .player-row::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--player-color, #fa4);
+        opacity: 0;
+        border-radius: 0 2px 2px 0;
+        transition: opacity 0.15s;
+      }
+      .player-row.followed::before {
+        opacity: 1;
+      }
+      .p-icon {
+        font-size: 11px;
+        opacity: 0.75;
+        flex-shrink: 0;
+      }
+      .p-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(255, 255, 255, 0.9);
+      }
+      .p-fitness {
+        color: #fa4;
+        font-size: 10px;
+        min-width: 42px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+      }
+      .p-mass {
+        color: rgba(255, 255, 255, 0.6);
+        text-align: right;
+        min-width: 34px;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+        font-size: 10px;
+      }
+      .p-bar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 2px;
+        background: var(--player-color, #fa4);
+        opacity: 0.3;
+        transition: width 0.4s ease;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="next-gen-btn">Next Generation</button>
+    <div id="train-layout">
+      <!-- ── Canvas pane ── -->
+      <div id="canvas-wrap">
+        <canvas id="game"></canvas>
+        <canvas
+          id="minimap"
+          width="160"
+          height="160"
+        ></canvas>
+        <div id="follow-badge">Overview</div>
+        <div id="gen-banner">Gen — &nbsp;|&nbsp; —s</div>
+        <div id="zoom-controls">
+          <button
+            id="zoom-out"
+            title="Zoom out"
+          >
+            −
+          </button>
+          <span id="zoom-label">1×</span>
+          <button
+            id="zoom-in"
+            title="Zoom in"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Sidebar ── -->
+      <div id="sidebar">
+        <div id="sidebar-header">
+          <span>🧬 TRAINING</span>
+          <a
+            href="spectate.html"
+            id="spectate-link"
+            >Spectate →</a
+          >
+        </div>
+
+        <!-- Generation info -->
+        <div id="gen-panel">
+          <div class="section-title">GENERATION</div>
+          <div class="stat-row">
+            <span class="stat-key">Generation</span>
+            <span
+              class="stat-val highlight"
+              id="gen-num"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Time left</span>
+            <span
+              class="stat-val"
+              id="gen-time"
+              >—</span
+            >
+          </div>
+          <div id="time-bar-wrap"><div id="time-bar"></div></div>
+        </div>
+
+        <!-- Fitness & mass stats -->
+        <div id="stats-panel">
+          <div class="stat-row">
+            <span class="stat-key">Top fitness</span>
+            <span
+              class="stat-val highlight"
+              id="top-fitness"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Avg fitness</span>
+            <span
+              class="stat-val"
+              id="avg-fitness"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Best mass</span>
+            <span
+              class="stat-val"
+              id="best-mass"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Avg mass</span>
+            <span
+              class="stat-val"
+              id="avg-mass"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Bots alive</span>
+            <span
+              class="stat-val"
+              id="pop-size"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Deaths</span>
+            <span
+              class="stat-val"
+              id="gen-deaths"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">TPS</span>
+            <span
+              class="stat-val"
+              id="stats-tps"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Food</span>
+            <span
+              class="stat-val"
+              id="stats-food"
+              >—</span
+            >
+          </div>
+        </div>
+
+        <!-- Currently followed bot -->
+        <div id="follow-panel">
+          <div class="section-title">FOLLOWING</div>
+          <div id="follow-label">— Overview —</div>
+          <div
+            id="follow-stats"
+            style="display: none; margin-top: 6px"
+          >
+            <div class="stat-row">
+              <span class="stat-key">Mass</span>
+              <span
+                class="stat-val"
+                id="follow-mass"
+                >—</span
+              >
+            </div>
+            <div class="stat-row">
+              <span class="stat-key">Cells</span>
+              <span
+                class="stat-val"
+                id="follow-cells"
+                >—</span
+              >
+            </div>
+            <div class="stat-row">
+              <span class="stat-key">Rank</span>
+              <span
+                class="stat-val"
+                id="follow-rank"
+                >—</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- Bot list sorted by fitness -->
+        <div id="player-list-wrap">
+          <div class="section-title">BOTS <span id="player-count"></span></div>
+          <div id="player-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="lib/msgpack.min.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/minimap.js"></script>
+    <script src="js/spectate_viewport.js"></script>
+    <script src="js/train.js"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ const State = (() => {
   // Live data
   const cells = new Map(); // id -> {id, x, y, mass, playerId, name, prevX, prevY, prevMass}
   const food = new Map(); // id -> {id, x, y, colorIdx}
+  const viruses = new Map(); // id -> {id, x, y, mass}
   const ownCellIds = new Set();
   let leaderboard = [];
   let lastTickTime = 0;
@@ -17,6 +18,8 @@ const State = (() => {
 
   // Name cache: playerId -> name string
   const nameCache = new Map();
+  // Hue cache: playerId -> hue integer (0-359), -1 means use player_id fallback
+  const hueCache = new Map();
 
   function init(msg) {
     playerId = msg[1];
@@ -26,19 +29,27 @@ const State = (() => {
     ready = true;
     cells.clear();
     food.clear();
+    viruses.clear();
     ownCellIds.clear();
     nameCache.clear();
     leaderboard = [];
   }
 
   function applyTick(msg) {
-    // msg layout: [0x11, tick_num, own_cell_ids, visible_cells, food_new, food_removed, leaderboard_or_null]
+    // msg layout: [0x11, tick_num, own_cell_ids, visible_cells, food_new, food_removed, virus_new, virus_removed, leaderboard_or_null]
+    if (!msg || msg.length < 7) {
+      console.error('Invalid tick message:', msg);
+      return;
+    }
+    
     const tickNum = msg[1];
-    const ownIds = msg[2]; // array of cell IDs owned by this player
-    const visCells = msg[3]; // [[id, x, y, mass, player_id, name_or_null], ...]
-    const foodNew = msg[4]; // [[id, x, y, color_idx], ...]
-    const foodRemoved = msg[5]; // [id, ...]
-    const lb = msg[6]; // [[name, score], ...] or null
+    const ownIds = msg[2] || []; // array of cell IDs owned by this player
+    const visCells = msg[3] || []; // [[id, x, y, mass, player_id, name_or_null, hue_or_null], ...]
+    const foodNew = msg[4] || []; // [[id, x, y, color_idx, mass], ...]
+    const foodRemoved = msg[5] || []; // [id, ...]
+    const virusNew = msg.length > 6 ? msg[6] : []; // [[id, x, y, mass], ...]
+    const virusRemoved = msg.length > 7 ? msg[7] : []; // [id, ...]
+    const lb = msg.length > 8 ? msg[8] : null; // [[name, score], ...] or null
 
     lastTickNum = tickNum;
     const now = performance.now();
@@ -58,9 +69,10 @@ const State = (() => {
     // Update visible cells (save previous positions for interpolation)
     const seenIds = new Set();
     for (const c of visCells) {
-      const [id, x, y, mass, pid, name] = c;
+      const [id, x, y, mass, pid, name, hue] = c;
       seenIds.add(id);
       if (name !== null && name !== undefined) nameCache.set(pid, name);
+      if (hue !== null && hue !== undefined) hueCache.set(pid, hue);
       const existing = cells.get(id);
       if (existing) {
         existing.prevX = existing.x;
@@ -92,6 +104,10 @@ const State = (() => {
     // Delta food
     for (const f of foodNew) food.set(f[0], { id: f[0], x: f[1], y: f[2], colorIdx: f[3], mass: f[4] });
     for (const id of foodRemoved) food.delete(id);
+
+    // Delta viruses
+    for (const v of virusNew) viruses.set(v[0], { id: v[0], x: v[1], y: v[2], mass: v[3] });
+    for (const id of virusRemoved) viruses.delete(id);
 
     // Leaderboard (sent every N ticks)
     if (lb) leaderboard = lb;
@@ -152,6 +168,9 @@ const State = (() => {
     get food() {
       return food;
     },
+    get viruses() {
+      return viruses;
+    },
     get ownCellIds() {
       return ownCellIds;
     },
@@ -166,6 +185,7 @@ const State = (() => {
     },
     getOwnCells,
     getName,
+    getHue(pid) { return hueCache.get(pid) ?? -1; },
     getInterpolated,
     init,
     applyTick,
@@ -174,9 +194,11 @@ const State = (() => {
       playerId = null;
       cells.clear();
       food.clear();
+      viruses.clear();
       ownCellIds.clear();
       leaderboard = [];
       nameCache.clear();
+      hueCache.clear();
     },
   };
 })();
