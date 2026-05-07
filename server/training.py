@@ -108,7 +108,13 @@ class TrainingWorld:
         for pid in list(self._bot_ids):
             self._bot_controller.unregister(pid)
         self._bot_ids.clear()
+
+        # Fully reset all spatial grids and entity state
+        self.cell_grid  = SpatialGrid()
+        self.food_grid  = SpatialGrid()
         self.virus_grid = SpatialGrid()
+        self.players.clear()
+        self.cell_map.clear()
         self.food_mgr  = FoodManager(self.food_grid)
         self.virus_mgr = VirusManager(self.virus_grid)
         self._cell_id_counter = itertools.count(1)
@@ -118,12 +124,7 @@ class TrainingWorld:
             spec['known_player_ids'].clear()
 
         self.seed_food()
-        self.seed_viruses
-        # Reset per-viewer name caches (all players are new)
-        for spec in self._viewers.values():
-            spec['known_player_ids'].clear()
-
-        self.seed_food()
+        self.seed_viruses()
 
         self.generation       += 1
         self._gen_start_time   = asyncio.get_event_loop().time()
