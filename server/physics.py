@@ -4,7 +4,7 @@ import random
 from typing import TYPE_CHECKING
 
 from . import config
-from .player import Cell, Player, cell_radius
+from .player import Cell, Player
 from .spatial import SpatialGrid
 
 if TYPE_CHECKING:
@@ -43,18 +43,14 @@ def update_positions(cells: list[Cell], cell_grid: SpatialGrid) -> None:
 # ---------------------------------------------------------------------------
 
 def apply_decay(players: dict[int, Player], dt: float) -> list[tuple[int, int]]:
-    """
-    Apply mass decay. Returns list of (player_id, cell_id) pairs that were
-    removed due to falling below MIN_CELL_MASS.
-    Detached cells (merge_timer > 0) decay at DETACHED_DECAY_MULTIPLIER times the normal rate.
-    """
+    """Apply mass decay. Returns list of (player_id, cell_id) pairs removed.
+    All cells decay at the same rate (no split multiplier) — matches agar.io."""
     removed = []
     for player in players.values():
         surviving = []
         for cell in player.cells:
             if cell.mass > config.DECAY_MIN_MASS:
-                multiplier = config.DETACHED_DECAY_MULTIPLIER if cell.merge_timer > 0 else 1.0
-                cell.mass -= cell.mass * config.DECAY_RATE * multiplier * dt
+                cell.mass -= cell.mass * config.DECAY_RATE * dt
             if cell.mass < config.MIN_CELL_MASS:
                 removed.append((player.id, cell.id))
             else:
@@ -67,82 +63,24 @@ def apply_decay(players: dict[int, Player], dt: float) -> list[tuple[int, int]]:
 # Merge
 # ---------------------------------------------------------------------------
 
-def update_merge_timers(players: dict[int, Player], cell_grid: SpatialGrid, food_mgr: "FoodManager", cell_map: dict, dt: float) -> None:
+def update_merge_timers(players: dict[int, Player], cell_grid: SpatialGrid, cell_map: dict, dt: float) -> None:
     """Decrement merge timers and merge overlapping same-player cells that are ready."""
     for player in players.values():
         for cell in player.cells:
             if cell.merge_timer > 0:
-                cell.merge_timer = max(-config.MERGE_PULL_MAX_TIME, cell.merge_timer - dt)
+                cell.merge_timer = max(0.0, cell.merge_timer - dt)
 
-        _try_merge(player, cell_grid, food_mgr, cell_map)
+        _try_merge(player, cell_grid, cell_map)
 
 
 def apply_merge_attraction(players: dict[int, Player], cell_grid: SpatialGrid, dt: float) -> None:
-    """Pull same-player cells toward each other.
-    While merge_timer > 0: gentle magnet ramps from 0 → SPLIT_MAGNET_SPEED.
-    After merge_timer <= 0: stronger pull ramps from MERGE_PULL_BASE → MERGE_PULL_MAX."""
-    for player in players.values():
-        cells = player.cells
-        if len(cells) < 2:
-            continue
-
-        # --- Phase 1: gentle magnetism while still in split cooldown ---
-        for i in range(len(cells)):
-            a = cells[i]
-            if a.merge_timer <= 0:
-                continue
-            for j in range(i + 1, len(cells)):
-                b = cells[j]
-                if b.merge_timer <= 0:
-                    continue
-                dx = b.x - a.x
-                dy = b.y - a.y
-                dist = math.hypot(dx, dy)
-                if dist < 1.0:
-                    continue
-                # Full-strength pull immediately; no ramp needed
-                pull = config.SPLIT_MAGNET_SPEED
-                move = min(pull * dt, dist * 0.3)
-                nx = dx / dist
-                ny = dy / dist
-                a.x += nx * move
-                a.y += ny * move
-                b.x -= nx * move
-                b.y -= ny * move
-                cell_grid.move(a.id, a.x, a.y)
-                cell_grid.move(b.id, b.x, b.y)
-
-        # --- Phase 2: strong pull once merge cooldown has expired ---
-        for i in range(len(cells)):
-            a = cells[i]
-            if a.merge_timer > 0:
-                continue
-            for j in range(i + 1, len(cells)):
-                b = cells[j]
-                if b.merge_timer > 0:
-                    continue
-                dx = b.x - a.x
-                dy = b.y - a.y
-                dist = math.hypot(dx, dy)
-                if dist < 1.0:
-                    continue
-                # Time both cells have been ready (use the lesser of the two)
-                time_ready = min(-a.merge_timer, -b.merge_timer)
-                t = min(1.0, time_ready / config.MERGE_PULL_RAMP)
-                pull = config.MERGE_PULL_BASE + (config.MERGE_PULL_MAX - config.MERGE_PULL_BASE) * t
-                move = min(pull * dt, dist * 0.45)
-                nx = dx / dist
-                ny = dy / dist
-                a.x += nx * move
-                a.y += ny * move
-                b.x -= nx * move
-                b.y -= ny * move
-                cell_grid.move(a.id, a.x, a.y)
-                cell_grid.move(b.id, b.x, b.y)
+    """No-op: agar.io cells do not magnetically attract — they converge naturally
+    because all pieces chase the same cursor target."""
 
 
-def _try_merge(player: Player, cell_grid: SpatialGrid, food_mgr: "FoodManager", cell_map: dict) -> None:
-    """Merge overlapping cells with merge_timer == 0."""
+def _try_merge(player: Player, cell_grid: SpatialGrid, cell_map: dict) -> None:
+    """Merge overlapping cells when both have merge_timer == 0.
+    Mass is fully transferred to the larger cell (no remnant food) — matches agar.io."""
     if len(player.cells) < 2:
         return
     merged = True
@@ -159,22 +97,17 @@ def _try_merge(player: Player, cell_grid: SpatialGrid, food_mgr: "FoodManager", 
                 a, b = survivors[i], survivors[j]
                 if a.merge_timer > 0 or b.merge_timer > 0:
                     continue
+                bigger, smaller = (a, b) if a.mass >= b.mass else (b, a)
                 dist = math.hypot(a.x - b.x, a.y - b.y)
-                if dist < max(a.radius, b.radius):
-                    # Merge b into a (keep the larger)
-                    bigger, smaller = (a, b) if a.mass >= b.mass else (b, a)
-                    # Weighted average position (smaller's mass goes to remnant food, not to bigger)
-                    total = bigger.mass + smaller.mass
-                    bigger.x = (bigger.x * bigger.mass + smaller.x * smaller.mass) / total
-                    bigger.y = (bigger.y * bigger.mass + smaller.y * smaller.mass) / total
-                    color_idx = player.id % len(config.FOOD_COLORS)
-                    food_mgr.spawn_remnant(smaller.x, smaller.y, color_idx, smaller.mass)
-                    cell_grid.move(bigger.id, bigger.x, bigger.y)
+                # agar.io eat distance: dist² < bigger.radius² - smaller.radius² * 0.5
+                eat_dist_sq = bigger.radius ** 2 - smaller.radius ** 2 * 0.5
+                if dist * dist < eat_dist_sq:
+                    # Transfer all mass — no remnant food
+                    bigger.mass += smaller.mass
+                    cell_grid.remove(smaller.id)
+                    cell_map.pop(smaller.id, None)
                     to_remove.add(smaller.id)
                     merged = True
-        for cell_id in to_remove:
-            cell_grid.remove(cell_id)
-            cell_map.pop(cell_id, None)
         player.cells = [c for c in player.cells if c.id not in to_remove]
 
 
@@ -192,7 +125,7 @@ def check_food_collisions(
         for cell in player.cells:
             r = cell.radius
             nearby_ids = food_grid.query_radius(cell.x, cell.y, r)
-            for fid in list(nearby_ids):
+            for fid in nearby_ids:
                 food = food_mgr.get(fid)
                 if food is None:
                     continue
@@ -221,8 +154,6 @@ def check_virus_collisions(
     Check cells against viruses. Large cells get split when hitting virus.
     Returns list of cell IDs that were removed (they got split).
     """
-    from .virus import Virus
-    
     removed_cell_ids = []
     
     for player in list(players.values()):
@@ -256,48 +187,54 @@ def _split_cell_by_virus(
     food_mgr,
     cell_id_counter,
 ):
-    """Split a cell into many pieces when it hits a virus."""
+    """Split a cell that hit a virus.
+    agar.io behaviour: split into as many equal pieces as needed to reach MAX_CELLS,
+    firing them outward in a fan. The direction of the first piece is away from the virus."""
     from .player import Cell
-    
-    # Remove the original cell
-    player.cells.remove(cell)
-    if cell.id in cell_map:
-        del cell_map[cell.id]
+
+    # How many new pieces can we create?
+    slots_available = config.MAX_CELLS - len(player.cells)
+    if slots_available <= 0:
+        return  # already at cap, virus has no effect
+
+    # We replace the current cell with (slots_available + 1) equal pieces
+    # (+1 because the original cell itself becomes one piece)
+    num_pieces = slots_available + 1
+    mass_per_piece = cell.mass / num_pieces
+
+    # Remove the original cell (guard in case it was already removed this tick)
+    try:
+        player.cells.remove(cell)
+    except ValueError:
+        return
     cell_grid.remove(cell.id)
-    
-    # Calculate how many pieces to split into
-    # Split into more pieces if cell is larger
-    num_splits = min(16, max(4, int(cell.mass / 30)))
-    mass_per_piece = cell.mass / num_splits
-    
-    # Create new cells in all directions
-    angle_step = 2 * math.pi / num_splits
-    for i in range(num_splits):
-        angle = i * angle_step
-        nx = math.cos(angle)
-        ny = math.sin(angle)
-        
-        # Stop if we've hit the cell limit
-        if len(player.cells) >= config.MAX_CELLS:
-            # Drop remaining mass as food
-            remaining_mass = mass_per_piece * (num_splits - i)
-            if remaining_mass > 1.0:
-                food_mgr.spawn_remnant(cell.x, cell.y, 0, remaining_mass)
-            break
-        
-        # Create new cell
+    cell_map.pop(cell.id, None)
+
+    # Direction of first piece: away from virus centre
+    dvx = cell.x - virus.x
+    dvy = cell.y - virus.y
+    base_angle = math.atan2(dvy, dvx)
+
+    merge_time = config.MERGE_TIME_BASE + config.MERGE_TIME_MASS_FACTOR * mass_per_piece
+
+    angle_step = 2.0 * math.pi / num_pieces
+    for i in range(num_pieces):
+        angle = base_angle + i * angle_step
+        cx = math.cos(angle)
+        cy = math.sin(angle)
+
         new_id = next(cell_id_counter)
         new_cell = Cell(
             id=new_id,
             player_id=player.id,
-            x=cell.x + nx * 10,
-            y=cell.y + ny * 10,
+            x=cell.x + cx * 10.0,
+            y=cell.y + cy * 10.0,
             mass=mass_per_piece,
-            vx=nx * config.SPLIT_SPEED * 0.7,  # Slightly slower than normal split
-            vy=ny * config.SPLIT_SPEED * 0.7,
-            merge_timer=config.MERGE_TIME_BASE,
+            vx=cx * config.SPLIT_SPEED,
+            vy=cy * config.SPLIT_SPEED,
+            merge_timer=merge_time,
+            collision_restore_ticks=config.COLLISION_RESTORE_TICKS,
         )
-        
         player.cells.append(new_cell)
         cell_grid.insert(new_cell.id, new_cell.x, new_cell.y)
         cell_map[new_cell.id] = (new_cell, player)
@@ -347,16 +284,17 @@ def check_cell_collisions(
 ) -> list[int]:
     """
     Handle cell-vs-cell interactions:
-      - Same player, cannot merge yet: elastic push
-      - Different player: eat if attacker is 1.1x larger
-    Returns list of (cell_ids) that were eaten/removed.
+      - Same player, cannot merge yet: elastic push using Ogar's proportional formula
+        (skip if either cell is in collision_restore_ticks window after a split)
+      - Different player: eat if attacker has EAT_RATIO × more mass and center is inside
+        the agar.io engulf radius: dist² < attacker_r² - target_r² * 0.5
+    Returns list of cell IDs that were eaten/removed.
     """
     eaten_cell_ids = []
 
     for player in players.values():
         for cell in list(player.cells):
             r = cell.radius
-            # Query a bit larger to catch cells we might eat
             nearby_ids = cell_grid.query_radius(cell.x, cell.y, r * 2.5)
             for other_id in nearby_ids:
                 if other_id == cell.id:
@@ -371,26 +309,31 @@ def check_cell_collisions(
                 dist = math.hypot(dx, dy)
 
                 if other_player.id == player.id:
-                    # Same player: push apart if not ready to merge
+                    # Same player: push apart when not ready to merge,
+                    # but only after the collision-restore window expires.
                     if cell.merge_timer > 0 or other_cell.merge_timer > 0:
-                        overlap = (cell.radius + other_cell.radius) - dist
+                        if cell.collision_restore_ticks > 0 or other_cell.collision_restore_ticks > 0:
+                            continue  # just-split cells pass through each other briefly
+                        overlap = (r + other_cell.radius) - dist
                         if overlap > 0 and dist > 0.001:
-                            push = overlap * 0.5
+                            # Ogar formula: each cell moves proportionally to the other's size
+                            max_dist = r + other_cell.radius
+                            move1 = overlap * (max_dist / r) * 0.25
+                            move2 = overlap * (max_dist / other_cell.radius) * 0.25
                             nx = dx / dist
                             ny = dy / dist
-                            cell.x += nx * push * 0.5
-                            cell.y += ny * push * 0.5
-                            other_cell.x -= nx * push * 0.5
-                            other_cell.y -= ny * push * 0.5
+                            cell.x += nx * move1
+                            cell.y += ny * move1
+                            other_cell.x -= nx * move2
+                            other_cell.y -= ny * move2
                             cell_grid.move(cell.id, cell.x, cell.y)
                             cell_grid.move(other_cell.id, other_cell.x, other_cell.y)
                 else:
-                    # Different player: eat check
-                    # Attacker must be EAT_RATIO times bigger in mass
-                    if cell.mass > config.EAT_RATIO * other_cell.mass:
-                        # Eat if cell center is inside attacker radius
-                        eat_dist = cell.radius - other_cell.radius * 0.3
-                        if dist < eat_dist:
+                    # Different player: eat if sufficiently larger and close enough
+                    if cell.mass >= config.EAT_RATIO * other_cell.mass:
+                        # agar.io engulf condition: dist² < attacker_r² - target_r² * 0.5
+                        eat_dist_sq = r * r - other_cell.radius * other_cell.radius * 0.5
+                        if dist * dist < eat_dist_sq:
                             cell.mass += other_cell.mass
                             eaten_cell_ids.append(other_cell.id)
                             other_player.cells = [c for c in other_player.cells if c.id != other_cell.id]
@@ -410,7 +353,9 @@ def perform_split(
     cell_map: dict[int, tuple[Cell, Player]],
     id_counter,  # itertools.count
 ) -> None:
-    """Split each qualifying cell in two."""
+    """Split each qualifying cell in two — exactly as agar.io/Ogar.
+    No recoil on parent. Both parent and child get full merge timer based on half-mass.
+    Both get collision_restore_ticks to pass through each other briefly."""
     if not player.split_pending:
         return
     player.split_pending = False
@@ -432,6 +377,11 @@ def perform_split(
         half_mass = cell.mass / 2.0
         cell.mass = half_mass
 
+        # agar.io merge timer: MERGE_TIME_BASE + MERGE_TIME_MASS_FACTOR * mass_at_split
+        merge_time = config.MERGE_TIME_BASE + config.MERGE_TIME_MASS_FACTOR * half_mass
+        cell.merge_timer = max(cell.merge_timer, merge_time)
+        cell.collision_restore_ticks = config.COLLISION_RESTORE_TICKS
+
         new_id = next(id_counter)
         child = Cell(
             id=new_id,
@@ -441,12 +391,9 @@ def perform_split(
             mass=half_mass,
             vx=nx * config.SPLIT_SPEED,
             vy=ny * config.SPLIT_SPEED,
-            merge_timer=config.MERGE_TIME_BASE,
+            merge_timer=merge_time,
+            collision_restore_ticks=config.COLLISION_RESTORE_TICKS,
         )
-        # Recoil the parent cell opposite to the split direction
-        cell.merge_timer = max(cell.merge_timer, config.MERGE_TIME_BASE)
-        cell.vx = -nx * config.SPLIT_SPEED * config.SPLIT_RECOIL
-        cell.vy = -ny * config.SPLIT_SPEED * config.SPLIT_RECOIL
 
         new_cells.append(child)
         cell_grid.insert(child.id, child.x, child.y)
@@ -476,6 +423,14 @@ def apply_split_velocity(players: dict[int, Player], cell_grid: SpatialGrid, dt:
             cell_grid.move(cell.id, cell.x, cell.y)
 
 
+def update_collision_restore_ticks(players: dict[int, Player]) -> None:
+    """Decrement per-cell collision-restore counters each tick."""
+    for player in players.values():
+        for cell in player.cells:
+            if cell.collision_restore_ticks > 0:
+                cell.collision_restore_ticks -= 1
+
+
 # ---------------------------------------------------------------------------
 # Eject
 # ---------------------------------------------------------------------------
@@ -486,7 +441,9 @@ def perform_eject(
     food_grid: SpatialGrid,
 ) -> list[int]:
     """
-    Eject a food pellet from each cell in mouse direction.
+    Eject a food pellet from each cell in mouse direction (agar.io / Ogar).
+    Cell must have mass >= EJECT_MIN_MASS (playerMinMassEject = 32).
+    Cost: EJECT_MASS_COST (15) deducted; pellet spawned with EJECT_MASS (13).
     Returns list of food IDs for ejected mass (to check virus feeding).
     """
     if not player.eject_pending:
@@ -495,7 +452,7 @@ def perform_eject(
 
     ejected_ids = []
     for cell in player.cells:
-        if cell.mass <= config.EJECT_MASS_COST + config.MIN_CELL_MASS:
+        if cell.mass < config.EJECT_MIN_MASS:
             continue
         dx = player.target_x - cell.x
         dy = player.target_y - cell.y
@@ -505,17 +462,20 @@ def perform_eject(
 
         cell.mass -= config.EJECT_MASS_COST
 
-        # Spawn ejected food slightly outside the cell
-        ex = cell.x + nx * (cell.radius + 5)
-        ey = cell.y + ny * (cell.radius + 5)
+        # Spawn ejected food just outside the cell; add slight random spread (±0.3 rad) like Ogar
+        spread = (random.random() - 0.5) * 0.6
+        ex_angle = math.atan2(ny, nx) + spread
+        enx = math.cos(ex_angle)
+        eny = math.sin(ex_angle)
+
+        ex = cell.x + enx * (cell.radius + 16)
+        ey = cell.y + eny * (cell.radius + 16)
         ex = max(0, min(config.WORLD_W, ex))
         ey = max(0, min(config.WORLD_H, ey))
 
-        # Calculate velocity for ejected mass
-        vx = nx * config.EJECT_SPEED
-        vy = ny * config.EJECT_SPEED
+        vx = enx * config.EJECT_SPEED
+        vy = eny * config.EJECT_SPEED
 
-        # Use a random color for ejected food
         color_idx = random.randrange(len(config.FOOD_COLORS))
         fid = food_mgr.spawn_ejected(ex, ey, color_idx, config.EJECT_MASS, vx, vy)
         ejected_ids.append(fid)

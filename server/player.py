@@ -22,17 +22,27 @@ class Cell:
     mass: float
     vx: float = 0.0
     vy: float = 0.0
-    merge_timer: float = 0.0   # seconds until this cell can merge
+    merge_timer: float = 0.0         # seconds until this cell can merge (> 0 = not ready)
+    collision_restore_ticks: int = 0 # ticks left where same-player cells skip push-apart
     # grid key cached to avoid recomputing (updated by SpatialGrid)
     grid_key: tuple = field(default=(0, 0), compare=False)
 
+    def __setattr__(self, name: str, value) -> None:
+        object.__setattr__(self, name, value)
+        if name == 'mass':
+            r = math.sqrt(max(value, 0.0))
+            object.__setattr__(self, '_radius', r * config.RADIUS_FACTOR)
+            size = max(1, math.ceil(10.0 * r))
+            object.__setattr__(self, '_speed',
+                max(config.MIN_SPEED, config.BASE_SPEED / (size ** config.SPEED_EXPONENT)))
+
     @property
     def radius(self) -> float:
-        return cell_radius(self.mass)
+        return self._radius
 
     @property
     def speed(self) -> float:
-        return max(config.MIN_SPEED, config.BASE_SPEED / (self.mass ** config.SPEED_EXPONENT))
+        return self._speed
 
 
 @dataclass
@@ -51,8 +61,7 @@ class Player:
     # delta tracking for food and viruses
     sent_food_ids: set[int] = field(default_factory=set)
     sent_virus_ids: set[int] = field(default_factory=set)
-    # food IDs already sent to this client (delta tracking)
-    sent_food_ids: set[int] = field(default_factory=set)
+
 
     @property
     def total_mass(self) -> float:
@@ -66,10 +75,17 @@ class Player:
     def centroid(self) -> tuple[float, float]:
         if not self.cells:
             return (config.WORLD_W / 2, config.WORLD_H / 2)
-        total = self.total_mass or 1.0
-        cx = sum(c.x * c.mass for c in self.cells) / total
-        cy = sum(c.y * c.mass for c in self.cells) / total
-        return (cx, cy)
+        total = 0.0
+        wx = 0.0
+        wy = 0.0
+        for c in self.cells:
+            m = c.mass
+            total += m
+            wx += c.x * m
+            wy += c.y * m
+        if total == 0.0:
+            return (config.WORLD_W / 2, config.WORLD_H / 2)
+        return (wx / total, wy / total)
 
     @property
     def viewport_rect(self) -> tuple[float, float, float, float]:

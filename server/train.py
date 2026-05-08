@@ -27,7 +27,14 @@ async def main() -> None:
 
     world = TrainingWorld()
 
-    tick_task = asyncio.create_task(world.tick_loop())
+    async def tick_loop_with_logging():
+        try:
+            await world.tick_loop()
+        except Exception:
+            logger.exception("Tick loop crashed")
+            raise
+
+    tick_task = asyncio.create_task(tick_loop_with_logging())
 
     server = await ws_server.serve(
         world.handle_viewer,

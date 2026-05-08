@@ -102,7 +102,7 @@ const State = (() => {
     }
 
     // Delta food
-    for (const f of foodNew) food.set(f[0], { id: f[0], x: f[1], y: f[2], colorIdx: f[3], mass: f[4], vx: f[5] || 0, vy: f[6] || 0 });
+    for (const f of foodNew) food.set(f[0], { id: f[0], x: f[1], y: f[2], colorIdx: f[3], mass: f[4] });
     for (const id of foodRemoved) food.delete(id);
 
     // Delta viruses
@@ -124,27 +124,6 @@ const State = (() => {
 
   function getName(pid) {
     return nameCache.get(pid) || '?';
-  }
-
-  // Must match server config.EJECT_DECEL
-  const EJECT_DECEL = 1.0;
-
-  function updateMovingFood(dt) {
-    // dt in seconds. Replicate server food.py tick_decay physics each frame.
-    for (const [, f] of food) {
-      if (f.vx === 0 && f.vy === 0) continue;
-      f.x += f.vx * dt;
-      f.y += f.vy * dt;
-      f.x = Math.max(0, Math.min(worldW, f.x));
-      f.y = Math.max(0, Math.min(worldH, f.y));
-      const decel = Math.max(0, 1.0 - EJECT_DECEL * dt);
-      f.vx *= decel;
-      f.vy *= decel;
-      if (Math.abs(f.vx) < 1 && Math.abs(f.vy) < 1) {
-        f.vx = 0;
-        f.vy = 0;
-      }
-    }
   }
 
   function lerp(a, b, t) {
@@ -208,7 +187,6 @@ const State = (() => {
     getName,
     getHue(pid) { return hueCache.get(pid) ?? -1; },
     getInterpolated,
-    updateMovingFood,
     init,
     applyTick,
     reset() {

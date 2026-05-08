@@ -22,9 +22,10 @@
   let ws           = null;
   let followId     = null;   // null = overview; number = player ID being followed
   let zoomIdx      = 3;      // index into ZOOM_MULTIPLIERS (3 = 1×)
-  let statsData    = [];     // [[id, name, mass, cx, cy, cells, is_bot], ...]
+  let statsData    = [];     // [[id, name, mass, cx, cy, cells, is_bot, fitness], ...]
   let totalFood    = 0;
   let lastStatsTick = 0;
+  let sortMode     = 'mass'; // 'mass' | 'fitness'
 
   // TPS tracking (client-side measurement of incoming ticks)
   let tpsTickCount = 0;
@@ -50,6 +51,7 @@
   const zoomInBtn     = document.getElementById('zoom-in');
   const zoomOutBtn    = document.getElementById('zoom-out');
   const followBadge   = document.getElementById('follow-badge');
+  const sortToggleBtn = document.getElementById('sort-toggle');
 
   // ---- Init subsystems ----
   Renderer.init(canvas);
@@ -70,6 +72,16 @@
 
   if (zoomInBtn)  zoomInBtn.addEventListener('click',  () => applyZoom(zoomIdx + 1));
   if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => applyZoom(zoomIdx - 1));
+
+  // ---- Sort toggle ----
+  if (sortToggleBtn) {
+    sortToggleBtn.addEventListener('click', () => {
+      sortMode = sortMode === 'mass' ? 'fitness' : 'mass';
+      sortToggleBtn.textContent = sortMode === 'fitness' ? 'Fitness ↓' : 'Mass ↓';
+      sortToggleBtn.classList.toggle('active', sortMode === 'fitness');
+      _rebuildPlayerList();
+    });
+  }
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -172,6 +184,11 @@
     return Math.floor(m).toString();
   }
 
+  function _fmtFitness(f) {
+    if (f >= 1000) return (f / 1000).toFixed(1) + 'k';
+    return f.toFixed(1);
+  }
+
   function _updateSidebar() {
     const bots   = statsData.filter(p => p[6] === 1);
     const humans = statsData.filter(p => p[6] === 0);
@@ -202,24 +219,32 @@
   function _rebuildPlayerList() {
     if (!playerListEl) return;
 
-    const sorted   = [...statsData].sort((a, b) => b[2] - a[2]);
-    const maxMass  = sorted.length > 0 ? sorted[0][2] : 1;
+    const byFitness = sortMode === 'fitness';
+    const sorted    = [...statsData].sort((a, b) =>
+      byFitness ? (b[7] || 0) - (a[7] || 0) : b[2] - a[2]
+    );
+    const maxVal = sorted.length > 0
+      ? (byFitness ? Math.max(sorted[0][7] || 0, 1) : sorted[0][2])
+      : 1;
     if (playerCount) playerCount.textContent = `(${sorted.length})`;
 
     let html = '';
     for (const p of sorted) {
       const [id, name, mass, , , cells, isBot] = p;
+      const fitness    = p[7] || 0;
       const isFollowed = id === followId;
       const icon       = isBot ? '🤖' : '👤';
       const hue        = (id * 137.508) % 360;
       const color      = `hsl(${hue}, 70%, 55%)`;
-      const barPct     = Math.max(2, Math.round((mass / maxMass) * 100));
+      const displayVal = byFitness && isBot ? _fmtFitness(fitness) : _fmtMass(mass);
+      const barVal     = byFitness ? (isBot ? fitness : 0) : mass;
+      const barPct     = Math.max(2, Math.round((barVal / maxVal) * 100));
 
       html += `<div class="player-row${isFollowed ? ' followed' : ''}" data-id="${id}" style="--player-color:${color}">` +
         `<span class="p-icon">${icon}</span>` +
         `<span class="p-name">${_escHtml(name)}</span>` +
         `<span class="p-cells">${cells}c</span>` +
-        `<span class="p-mass">${_fmtMass(mass)}</span>` +
+        `<span class="p-mass">${displayVal}</span>` +
         `<div class="p-bar" style="width:${barPct}%"></div>` +
         `</div>`;
     }
@@ -245,6 +270,8 @@
         (performance.now() - State.lastTickTime) / State.smoothTickMs,
         1.0
       );
+
+      State.updateMovingFood(dt / 1000);
 
       // Find cells for the followed player (null → overview)
       let cells    = [];

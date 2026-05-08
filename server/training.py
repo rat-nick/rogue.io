@@ -27,7 +27,7 @@ from . import config
 from . import physics
 from . import protocol
 from .bot import BotController, NullWebSocket
-from .genetics import GenomePool
+from .genetics import GenomePool, random_genome
 from .food import FoodManager
 from .player import Cell, Player
 from .spatial import SpatialGrid
@@ -35,10 +35,12 @@ from .virus import VirusManager
 
 logger = logging.getLogger(__name__)
 
-GENERATION_TIME  = 60.0   # seconds per generation
-TRAIN_POP_SIZE   = 100    # bots per generation
-SURVIVE_FRACTION = 0.50   # top fraction whose genomes seed next generation
+GENERATION_TIME  = 120   # seconds per generation
+TRAIN_POP_SIZE   = 200    # bots per generation
+SURVIVE_FRACTION = 0.3   # top fraction whose genomes seed next generation
+DIVERSITY_INJECTION_RATE = 0.15  # fraction of survivor slots replaced by fresh random genomes
 TRAIN_PORT       = 8766   # separate port from main game
+EARLY_NEXT_GEN_THRESHOLD = 0.5   # trigger early end when alive / start_pop <= this
 
 _BOT_NAMES = [
     "Alpha", "Beta", "Gamma", "Delta", "Epsilon",
@@ -84,6 +86,15 @@ class TrainingWorld:
         self.generation:       int   = 0
         self._gen_start_time:  float = 0.0  # asyncio loop time at generation start
         self._gen_deaths:      int   = 0
+        self._gen_start_pop:   int   = 0    # population at generation start
+
+        # Early-next-gen: end the generation once alive bots fall below threshold
+        self.early_next_gen:   bool  = True
+
+        # Simulation time scale: >1 runs faster, <1 slower
+        self.time_scale:       float = 1.0
+        # Set to True by handle_viewer when time_scale changes so tick_loop resets its timer
+        self._time_scale_changed: bool = False
 
         # Viewer connections: viewer_id -> {'ws': websocket, 'known_player_ids': set()}
         self._viewers: dict[int, dict] = {}
@@ -101,7 +112,7 @@ class TrainingWorld:
         self.virus_mgr.respawn_to_target(config.VIRUS_TARGET)
         self.virus_mgr.flush_delta()
 
-    def start_generation(self) -> None:
+    async def start_generation(self) -> None:
         """Wipe the world and spawn a fresh population for a new generation."""
         self._gen_records.clear()
 
@@ -130,15 +141,20 @@ class TrainingWorld:
         self._gen_start_time   = asyncio.get_event_loop().time()
         self._gen_deaths       = 0
 
-        for _ in range(TRAIN_POP_SIZE):
+        # Spawn bots in batches, yielding periodically so the event loop stays alive
+        for i in range(TRAIN_POP_SIZE):
             self._spawn_bot()
+            if i % 20 == 0:
+                await asyncio.sleep(0)
+
+        self._gen_start_pop = len(self._bot_ids)
 
         logger.info(
             f"[Train] Generation {self.generation} started — {TRAIN_POP_SIZE} bots"
         )
 
-    def _end_generation(self) -> None:
-        """Collect final fitness, select survivors, rebuild pool, save."""
+    async def _end_generation(self) -> None:
+        """Collect final fitness, select survivors, inject diversity, rebuild pool, save."""
         # Collect fitness for still-alive bots
         for pid in list(self._bot_ids):
             genome  = self._bot_controller.get_genome(pid)
@@ -148,29 +164,46 @@ class TrainingWorld:
                 if fitness > prev_fitness:
                     self._gen_records[pid] = (genome, fitness)
 
-        # Sort by fitness (highest first)
+        # Sort by raw fitness (highest first) — raw fitness determines who survives
         scored = sorted(
             self._gen_records.values(),
             key=lambda gf: gf[1],
             reverse=True,
         )
         n_survivors = max(1, int(len(scored) * SURVIVE_FRACTION))
-        survivors   = scored[:n_survivors]
+        # Reserve a fraction of survivor slots for fresh random genomes so the
+        # pool never fully converges to one cluster of similar high-fitness genomes.
+        n_inject   = max(0, int(n_survivors * DIVERSITY_INJECTION_RATE))
+        survivors  = scored[:n_survivors - n_inject]
 
         top_fit = survivors[0][1] if survivors else 0.0
         logger.info(
             f"[Train] Generation {self.generation} ended — "
-            f"{n_survivors}/{len(scored)} survivors, "
+            f"{len(survivors)}/{len(scored)} survivors + {n_inject} random injections, "
             f"top fitness={top_fit:.1f}"
         )
 
-        # Rebuild pool with only the survivor genomes
-        self._genome_pool._pool = [
+        # Rebuild pool: top survivors + fresh random genomes
+        new_pool = [
             {'genome': g, 'fitness': f, 'generation': self.generation}
             for g, f in survivors
         ]
+        for _ in range(n_inject):
+            new_pool.append({
+                'genome':     random_genome(),
+                'fitness':    0.0,
+                'generation': self.generation,
+            })
+        self._genome_pool._pool      = new_pool
         self._genome_pool.generation = self.generation
-        self._genome_pool.save(config.NEAT_SAVE_PATH)
+
+        # O(n²) species clustering — run in a thread so the event loop stays alive
+        await asyncio.to_thread(self._genome_pool.update_species)
+        logger.info(
+            f"[Train] Species after selection: {self._genome_pool.species_count}"
+        )
+        # Non-blocking save — fire and forget so the tick loop isn't stalled
+        asyncio.create_task(self._genome_pool.save_async(config.NEAT_SAVE_PATH))
 
     # ------------------------------------------------------------------
     # Tick loop
@@ -178,14 +211,23 @@ class TrainingWorld:
 
     async def tick_loop(self) -> None:
         """Main training loop — runs indefinitely."""
-        self.start_generation()
+        await self.start_generation()
 
         loop = asyncio.get_event_loop()
         next_tick = loop.time()
 
         while True:
+            # If time_scale changed, push an immediate stats packet so clients see the new value
+            if self._time_scale_changed:
+                self._time_scale_changed = False
+                if self._viewers:
+                    stats_pkt = self._build_training_stats_packet()
+                    await asyncio.gather(
+                        *[self._safe_send(spec['ws'], stats_pkt) for spec in self._viewers.values()],
+                        return_exceptions=True,
+                    )
             next_tick += config.TICK_INTERVAL
-            await self._tick()
+            await self._tick(config.TICK_INTERVAL * self.time_scale)
             now = loop.time()
             sleep_time = next_tick - now
             if sleep_time > 0:
@@ -194,8 +236,7 @@ class TrainingWorld:
                 next_tick = loop.time()
                 await asyncio.sleep(0)
 
-    async def _tick(self) -> None:
-        dt = config.TICK_INTERVAL
+    async def _tick(self, dt: float) -> None:
         self.tick_counter += 1
 
         # ---------- Bot AI ----------
@@ -206,6 +247,7 @@ class TrainingWorld:
             physics.apply_input(player, dt)
 
         physics.apply_split_velocity(self.players, self.cell_grid, dt)
+        physics.update_collision_restore_ticks(self.players)
 
         all_cells = [c for p in self.players.values() for c in p.cells]
         physics.update_positions(all_cells, self.cell_grid)
@@ -215,23 +257,12 @@ class TrainingWorld:
             self.cell_grid.remove(cell_id)
             self.cell_map.pop(cell_id, None)
 
-        # Check virus collisions
-        virus_split_ids = physics.check_virus_collisions(
-            self.players, self.virus_mgr, self.virus_grid,
-            self.cell_grid, self.cell_map, self.food_mgr, self._cell_id_counter
-        )
-        for cell_id in virus_split_ids:
-            self.cell_map.pop(cell_id, None)
-
         physics.apply_merge_attraction(self.players, self.cell_grid, dt)
-        physics.update_merge_timers(
-            self.players, self.cell_grid, self.food_mgr, self.cell_map, dt
-        )
+        physics.update_merge_timers(self.players, self.cell_grid, self.cell_map, dt)
         self.food_mgr.tick_decay(dt)
 
         physics.check_food_collisions(self.players, self.food_mgr, self.food_grid)
 
-        # Check virus collisions
         virus_split_ids = physics.check_virus_collisions(
             self.players, self.virus_mgr, self.virus_grid,
             self.cell_grid, self.cell_map, self.food_mgr, self._cell_id_counter
@@ -254,6 +285,27 @@ class TrainingWorld:
             if ejected_ids:
                 physics.check_ejected_virus_feeding(ejected_ids, self.food_mgr, self.virus_mgr, self.virus_grid)
 
+        # ---------- Corner instant-death ----------
+        # Bots whose centroid is within VIRUS_RADIUS of any corner die immediately
+        # and their genome is discarded (no offspring).
+        corner_r = config.VIRUS_RADIUS
+        for player in list(self.players.values()):
+            if player.id not in self._bot_ids or not player.cells:
+                continue
+            cx, cy = player.centroid
+            in_corner = (
+                (cx < corner_r or cx > config.WORLD_W - corner_r) and
+                (cy < corner_r or cy > config.WORLD_H - corner_r)
+            )
+            if in_corner:
+                bs = self._bot_controller._state.get(player.id)
+                if bs is not None:
+                    bs['corner_death'] = True
+                for cell in list(player.cells):
+                    self.cell_grid.remove(cell.id)
+                    self.cell_map.pop(cell.id, None)
+                player.cells.clear()
+
         # ---------- Respawn dead bots ----------
         dead_bots = [
             p for p in list(self.players.values())
@@ -261,24 +313,34 @@ class TrainingWorld:
         ]
         for player in dead_bots:
             bs = self._bot_controller._state.get(player.id)
+            is_corner_death = bs.get('corner_death', False) if bs else False
             if bs is not None:
                 bs['deaths'] += 1
             genome, fitness = self._bot_controller.unregister(player.id)
             self._gen_deaths += 1
-            if genome is not None:
+            if genome is not None and not is_corner_death:
                 prev_fitness = self._gen_records.get(player.id, (None, 0.0))[1]
                 if fitness > prev_fitness:
                     self._gen_records[player.id] = (genome, fitness)
-                self._genome_pool.add(genome, fitness)
             self._bot_ids.discard(player.id)
             self.players.pop(player.id, None)
-            # No respawn here; bots only respawn at generation start
+            self._spawn_bot()
             await asyncio.sleep(0)
+
+        # ---------- Early next-gen check ----------
+        if (self.early_next_gen
+                and self._gen_start_pop > 0
+                and self._bot_ids
+                and len(self._bot_ids) / self._gen_start_pop <= EARLY_NEXT_GEN_THRESHOLD):
+            logger.info(
+                f"[Train] Early next gen — {len(self._bot_ids)}/{self._gen_start_pop} bots alive"
+            )
+            self._gen_start_time = 0.0  # force generation boundary below
 
         # ---------- Food replenishment ----------
         deficit = config.FOOD_TARGET - self.food_mgr.count()
         if deficit > 0:
-            self.food_mgr.spawn_batch(min(deficit, 50))
+            self.food_mgr.spawn_batch(deficit)
         
         # ---------- Virus replenishment ----------
         virus_deficit = config.VIRUS_TARGET - self.virus_mgr.count()
@@ -293,11 +355,7 @@ class TrainingWorld:
         # ---------- Send to viewers ----------
         if self._viewers:
             # Build cell list (whole world, no culling)
-            all_cells_now = [
-                self.cell_map[cid][0]
-                for cid in list(self.cell_grid._entity_key)
-                if cid in self.cell_map
-            ]
+            all_cells_now = [cell for cell, _ in self.cell_map.values()]
 
             # Leaderboard built from current mass rankings
             lb = None
@@ -334,15 +392,53 @@ class TrainingWorld:
                 await asyncio.gather(*stats_tasks, return_exceptions=True)
 
         # ---------- Generation boundary ----------
-        if asyncio.get_event_loop().time() - self._gen_start_time >= GENERATION_TIME:
-            self._end_generation()
-            self.start_generation()
+        if asyncio.get_event_loop().time() - self._gen_start_time >= GENERATION_TIME / self.time_scale:
+            await self._end_generation()
+            await self.start_generation()
+            # Re-sync all connected viewers: their food/virus/cell state is stale
+            # because start_generation() recreates managers with fresh IDs and
+            # flushes the delta, so viewers never receive the new seeded food.
+            # Sending MSG_INIT clears client state; the bootstrap tick restores it.
+            if self._viewers:
+                resync_tasks = []
+                for vid, spec in self._viewers.items():
+                    init_pkt      = protocol.encode_init(vid, config.WORLD_W, config.WORLD_H, config.TICK_RATE)
+                    bootstrap_pkt = self._build_bootstrap_tick(spec['known_player_ids'])
+                    resync_tasks.append(self._safe_send(spec['ws'], init_pkt))
+                    resync_tasks.append(self._safe_send(spec['ws'], bootstrap_pkt))
+                await asyncio.gather(*resync_tasks, return_exceptions=True)
         else:
             await asyncio.sleep(0)
 
     # ------------------------------------------------------------------
     # Packet building
     # ------------------------------------------------------------------
+
+    def _build_bootstrap_tick(self, known_player_ids: set) -> bytes:
+        """
+        Build a tick packet treating all current world entities as newly spawned.
+        Sent once to a viewer on connect so they see viruses/food/cells that
+        already existed before they joined.
+        """
+        all_cells = [
+            self.cell_map[cid][0]
+            for cid in list(self.cell_grid._entity_key)
+            if cid in self.cell_map
+        ]
+        all_food    = list(self.food_mgr._food.values())
+        all_viruses = list(self.virus_mgr._viruses.values())
+        return protocol.encode_tick(
+            tick_num         = self.tick_counter,
+            own_cell_ids     = [],
+            visible_cells    = all_cells,
+            food_new         = all_food,
+            food_removed     = [],
+            virus_new        = all_viruses,
+            virus_removed    = [],
+            known_player_ids = known_player_ids,
+            player_map       = self.players,
+            leaderboard      = None,
+        )
 
     def _build_training_stats_packet(self) -> bytes:
         fitnesses = [
@@ -360,6 +456,7 @@ class TrainingWorld:
         players_info = []
         for pid, p in self.players.items():
             cx, cy = p.centroid
+            fitness = round(self._bot_controller.current_fitness(pid), 1)
             players_info.append([
                 pid,
                 p.name,
@@ -367,13 +464,14 @@ class TrainingWorld:
                 round(cx),
                 round(cy),
                 len(p.cells),
-                1,  # all are bots
+                1,       # all are bots
+                fitness, # [7]
             ])
 
         return protocol.encode_training_stats(
             tick_num       = self.tick_counter,
             generation     = self.generation,
-            time_remaining = max(0.0, GENERATION_TIME - (asyncio.get_event_loop().time() - self._gen_start_time)),
+            time_remaining = max(0.0, GENERATION_TIME / self.time_scale - (asyncio.get_event_loop().time() - self._gen_start_time)),
             pop_size       = len(self._bot_ids),
             top_fitness    = top_fitness,
             avg_fitness    = avg_fitness,
@@ -382,6 +480,8 @@ class TrainingWorld:
             total_deaths   = self._gen_deaths,
             players_info   = players_info,
             total_food     = self.food_mgr.count(),
+            early_next_gen = self.early_next_gen,
+            time_scale     = self.time_scale,
         )
 
     # ------------------------------------------------------------------
@@ -400,6 +500,12 @@ class TrainingWorld:
             )
             await websocket.send(init_pkt)
             if self.generation > 0:
+                # Bootstrap: send the full current world state so newly-connected viewers
+                # immediately see all viruses, food, and cells that already exist.
+                # Without this, viewers only receive delta updates and miss everything
+                # spawned before they connected (viruses are seeded once at gen start).
+                bootstrap_pkt = self._build_bootstrap_tick(spec['known_player_ids'])
+                await websocket.send(bootstrap_pkt)
                 await websocket.send(self._build_training_stats_packet())
             async for raw in websocket:
                 # Accept manual next-gen trigger from client
@@ -408,9 +514,18 @@ class TrainingWorld:
                         msg = msgpack.unpackb(raw)
                     except Exception:
                         continue
-                    if isinstance(msg, list) and msg and msg[0] == getattr(protocol, 'MSG_NEXT_GEN', 0x25):
-                        logger.info("[Train] Manual next generation triggered by client!")
-                        self._gen_start_time = 0.0  # force next gen
+                    if isinstance(msg, list) and msg:
+                        if msg[0] == protocol.MSG_NEXT_GEN:
+                            logger.info("[Train] Manual next generation triggered by client!")
+                            self._gen_start_time = 0.0
+                        elif msg[0] == protocol.MSG_SET_EARLY_NEXT_GEN:
+                            self.early_next_gen = bool(msg[1]) if len(msg) > 1 else True
+                            logger.info(f"[Train] Early next gen: {self.early_next_gen}")
+                        elif msg[0] == protocol.MSG_SET_TIME_SCALE:
+                            scale = float(msg[1]) if len(msg) > 1 else 1.0
+                            self.time_scale = max(0.25, min(16.0, scale))
+                            self._time_scale_changed = True
+                            logger.info(f"[Train] Time scale set to {self.time_scale}x")
         except Exception as exc:
             logger.debug(f"[Train] Viewer {vid} error: {exc}")
         finally:

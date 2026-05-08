@@ -2,13 +2,8 @@
 NEAT-based genome pool for evolving bot neural networks.
 
 Each genome is a neat.DefaultGenome whose weights/topology are evolved by
-NEAT operators (crossover + mutation).  The network takes 97 sensory inputs
+NEAT operators (crossover + mutation).  The network takes 56 sensory inputs
 and produces 4 action outputs — no hand-coded thresholds or decision trees.
-
-Input layout  (97 features):
-  per sector: [food_proximity, food_mass_norm,
-               prey_proximity, prey_smallness,
-               threat_proximity, threat_danger]
 
 Output layout (4):
   [move_x, move_y, split_signal, eject_signal]  — tanh ∈ [-1, 1]
@@ -24,12 +19,15 @@ from pathlib import Path
 import neat
 from neat.innovation import InnovationTracker
 
+from . import config as _cfg
+
 
 # ---------------------------------------------------------------------------
 # NEAT config (loaded once at module import)
 # ---------------------------------------------------------------------------
 
-_CFG_PATH = os.path.join(os.path.dirname(__file__), 'neat.cfg')
+_CFG_NAME = 'neat_v2.cfg' if _cfg.PERCEPTION_VERSION == 2 else 'neat.cfg'
+_CFG_PATH = os.path.join(os.path.dirname(__file__), _CFG_NAME)
 neat_config = neat.Config(
     neat.DefaultGenome,
     neat.DefaultReproduction,
@@ -78,6 +76,13 @@ _POOL_MAX_SIZE = 200
 _TOURNAMENT_K  = 3
 
 
+def _write_pickle(data: dict, path: str) -> None:
+    tmp = path + '.tmp'
+    with open(tmp, 'wb') as f:
+        pickle.dump(data, f)
+    os.replace(tmp, path)
+
+
 class GenomePool:
     """
     Maintains a population of NEAT genomes with their fitness scores.
@@ -85,12 +90,13 @@ class GenomePool:
     """
 
     def __init__(self) -> None:
-        # List of {'genome': neat.DefaultGenome, 'fitness': float, 'generation': int}
+        # List of {'genome': neat.DefaultGenome, 'fitness': float, 'generation': int,
+        #          'species_size': int}
         self._pool: list[dict] = []
         self._key_counter: int = 1
         self.generation: int = 0
         self.total_deaths: int = 0
-        # Reset generation-level innovation deduplication on each new breeding round
+        self.species_count: int = 0
         _innovation_tracker.reset_generation()
 
     # ------------------------------------------------------------------
@@ -120,7 +126,6 @@ class GenomePool:
         Falls back to a fresh random genome if the pool is too small.
         """
         self.generation += 1
-        _innovation_tracker.reset_generation()
         if len(self._pool) < 2:
             g = neat.DefaultGenome(self._next_key())
             g.configure_new(neat_config.genome_config)
@@ -153,10 +158,48 @@ class GenomePool:
         child.mutate(neat_config.genome_config)
         return child
 
+    def update_species(self) -> None:
+        """
+        Cluster pool entries into species by NEAT compatibility distance and
+        record each entry's species_size.  Call this once after rebuilding the
+        pool so that _tournament_select can apply fitness sharing:
+            adjusted_fitness = raw_fitness / species_size
+        This prevents a single high-fitness cluster from monopolising breeding
+        and gives structurally novel genomes a fair chance as parents.
+        O(n²) distance computations — cheap enough at pool sizes ≤ 200.
+        """
+        if not self._pool:
+            self.species_count = 0
+            return
+        threshold = neat_config.species_set_config.compatibility_threshold
+        rep_genomes: list[neat.DefaultGenome] = []
+        species_members: list[list[int]] = []
+
+        for i, entry in enumerate(self._pool):
+            placed = False
+            for j, rep in enumerate(rep_genomes):
+                if entry['genome'].distance(rep, neat_config.genome_config) < threshold:
+                    species_members[j].append(i)
+                    placed = True
+                    break
+            if not placed:
+                rep_genomes.append(entry['genome'])
+                species_members.append([i])
+
+        for sp in species_members:
+            sz = len(sp)
+            for idx in sp:
+                self._pool[idx]['species_size'] = sz
+
+        self.species_count = len(species_members)
+
     def _tournament_select(self) -> dict:
         k = min(_TOURNAMENT_K, len(self._pool))
         contestants = random.sample(self._pool, k)
-        return max(contestants, key=lambda e: e['fitness'])
+        # Fitness sharing: downweight genomes whose species is already crowded so
+        # structurally diverse lineages get a fair shot at being selected as parents.
+        return max(contestants,
+                   key=lambda e: e['fitness'] / max(e.get('species_size', 1), 1))
 
     def best(self, n: int = 5) -> list[tuple[float, neat.DefaultGenome]]:
         """Return the top-n (fitness, genome) pairs."""
@@ -176,10 +219,19 @@ class GenomePool:
             'innovation_counter':  _innovation_tracker.global_counter,
             'pool':                self._pool,
         }
-        tmp = path + '.tmp'
-        with open(tmp, 'wb') as f:
-            pickle.dump(data, f)
-        os.replace(tmp, path)
+        _write_pickle(data, path)
+
+    async def save_async(self, path: str) -> None:
+        """Non-blocking save: snapshot state on the event loop, write in a thread."""
+        import asyncio
+        data = {
+            'generation':          self.generation,
+            'total_deaths':        self.total_deaths,
+            'key_counter':         self._key_counter,
+            'innovation_counter':  _innovation_tracker.global_counter,
+            'pool':                list(self._pool),  # snapshot avoids races
+        }
+        await asyncio.to_thread(_write_pickle, data, path)
 
     @staticmethod
     def load(path: str) -> 'GenomePool':
@@ -202,4 +254,5 @@ class GenomePool:
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning(f"Failed to load genome pool: {exc}")
+        pool.update_species()
         return pool

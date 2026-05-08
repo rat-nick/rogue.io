@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import http.server
 import logging
+import pathlib
+import threading
 
 from . import config
 from .game import GameWorld
@@ -13,9 +17,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_CLIENT_DIR = pathlib.Path(__file__).parent.parent / 'client'
+HTTP_PORT = 8080
+
+
+def _run_http_server() -> None:
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler,
+        directory=str(_CLIENT_DIR),
+    )
+    # Suppress request logs from the HTTP server
+    handler.log_message = lambda *_: None  # type: ignore[method-assign]
+    with http.server.HTTPServer(('', HTTP_PORT), handler) as httpd:
+        httpd.serve_forever()
+
 
 async def main() -> None:
     import websockets.asyncio.server as ws_server  # type: ignore
+
+    threading.Thread(target=_run_http_server, daemon=True).start()
+    logger.info(f"Game client at http://localhost:{HTTP_PORT}")
 
     world = GameWorld()
     world.seed_food()
@@ -31,7 +52,7 @@ async def main() -> None:
         config.HOST,
         config.PORT,
     )
-    logger.info(f"Server listening on ws://{config.HOST}:{config.PORT}")
+    logger.info(f"WebSocket server on ws://{config.HOST}:{config.PORT}")
 
     try:
         await server.serve_forever()

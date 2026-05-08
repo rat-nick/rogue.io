@@ -3,15 +3,15 @@ HOST = "0.0.0.0"
 PORT = 8765
 
 # World
-WORLD_W = 6000
-WORLD_H = 6000
+WORLD_W = 20000
+WORLD_H = 20000
 
 # Tick rate
 TICK_RATE = 20          # ticks per second
 TICK_INTERVAL = 1.0 / TICK_RATE  # seconds
 
 # Food
-FOOD_TARGET = 500
+FOOD_TARGET = 6000
 FOOD_MASS = 1.0
 REMNANT_DECAY_RATE = 0.10   # 20% of mass lost per second
 REMNANT_MIN_MASS = 1.0      # remnant removed when decayed below this
@@ -31,46 +31,46 @@ FOOD_COLORS = [
 ]
 
 # Cell physics
-BASE_SPEED = 1200.0       # world units/sec — agar.io formula: BASE_SPEED / mass^SPEED_EXPONENT
-SPEED_EXPONENT = 0.4  # agar.io exponent: speed ∝ mass^(-0.4396)
-MIN_SPEED = 20.0         # minimum cell speed (world units/sec) — prevents immobility at huge mass
-MIN_SPLIT_MASS = 35.0
-MAX_CELLS = 16          # max split cells per player
-MERGE_TIME_BASE = 12.0   # seconds before split cells can merge
-SPLIT_SPEED = 1800.0     # initial split boost (units/sec) — travels ~37% of viewport at starting mass
+# Speed formula (from Ogar / agar.io): BASE_SPEED / ceil(10 * sqrt(mass))^SPEED_EXPONENT
+# where BASE_SPEED = playerSpeed(30) * 1.6 * 25 = 1200 and SPEED_EXPONENT = 0.32 (applied to size)
+BASE_SPEED     = 1200  # world units/sec at size=1
+SPEED_EXPONENT = 0.32    # applied to cell size (= ceil(10*sqrt(mass))), not raw mass
+MIN_SPEED      = 50.0    # absolute floor (world units/sec)
 
-# Split momentum
-SPLIT_DECEL        = 3.5     # deceleration multiplier for split velocity (replaces hardcoded 8.0)
-SPLIT_RECOIL       = 0.3     # fraction of SPLIT_SPEED applied as recoil to parent cell
+MIN_SPLIT_MASS = 36    # minimum mass to perform a split (playerMinMassSplit)
+MAX_CELLS = 16           # max simultaneous pieces per player (playerMaxCells)
 
-# Merge attraction (kicks in when merge_timer <= 0)
-MERGE_PULL_BASE     = 120.0  # initial pull speed in world units/sec
-MERGE_PULL_MAX      = 550.0  # max pull speed at full ramp
-MERGE_PULL_RAMP     = 6.0    # seconds to ramp from base to max pull
-MERGE_PULL_MAX_TIME = 15.0   # how deep the timer goes negative (caps tracking)
+# Merge timer: merge_timer = MERGE_TIME_BASE + MERGE_TIME_MASS_FACTOR * cell_mass  (seconds)
+# Matches Ogar: floor(playerRecombineTime + 0.02 * mass) seconds
+MERGE_TIME_BASE        = 30.0   # base seconds (playerRecombineTime)
+MERGE_TIME_MASS_FACTOR = 0.02   # extra seconds per unit of mass
 
-# Magnetism between split cells (while merge_timer > 0)
-SPLIT_MAGNET_SPEED  = 400.0  # pull speed (world units/sec) — full strength immediately after split
+SPLIT_SPEED = 2000.0     # initial split burst (world units/sec)
+SPLIT_DECEL = 3.7        # exponential deceleration factor; total travel ≈ SPLIT_SPEED/SPLIT_DECEL ≈ 540 units
 
-DECAY_RATE = 0.01       # fraction of mass lost per second
-DECAY_MIN_MASS = 100.0    # only decay above this
-SPLIT_DECAY_RATE = 0.01  # faster decay for split cells (merge_timer > 0)
-EAT_RATIO = 1.1          # must be this much larger to eat
-MIN_CELL_MASS = 10.0     # remove cell if below this after decay
+# Ticks after a split during which same-player cells do NOT push each other apart.
+# Matches Ogar collisionRestoreTicks = 15 (at 25 Hz = 600 ms); 12 ticks ≈ 600 ms at 20 Hz.
+COLLISION_RESTORE_TICKS = 12
 
-# Eject
-EJECT_MASS_COST = 20.0
-EJECT_SPEED = 800.0
-EJECT_MASS = 15.0        # mass of ejected food pellet
-EJECT_DECEL = 2.0        # deceleration multiplier for ejected mass
+DECAY_RATE     = 0.002   # fraction of mass lost per second (playerMassDecayRate 0.002 / 25 Hz)
+DECAY_MIN_MASS = 9.0     # only cells above this mass decay (playerMinMassDecay)
+EAT_RATIO      = 1.3     # attacker must have ≥ EAT_RATIO × target mass to eat (baseEatingMassRequired)
+MIN_CELL_MASS  = 7.0     # cell removed when mass falls below this (below DECAY_MIN_MASS so decay alone can't kill a cell)
+
+# Eject (Ogar: ejectMassLoss=15, ejectMass=13, playerMinMassEject=32)
+EJECT_MIN_MASS  = 32.0   # minimum cell mass to allow ejecting
+EJECT_MASS_COST = 15.0   # mass deducted from cell on eject
+EJECT_MASS      = 13.0   # mass of the ejected pellet
+EJECT_SPEED     = 900.0  # initial speed of ejected pellet (world units/sec)
+EJECT_DECEL     = 1.0    # exponential deceleration factor for ejected pellets
 
 # Viruses
 VIRUS_MASS = 100.0        # mass of a virus
 VIRUS_RADIUS = 100.0      # visual radius (fixed, not mass-based)
 VIRUS_FEED_THRESHOLD = 7  # number of ejects needed to make virus shoot a new one
 VIRUS_SHOOT_SPEED = 600.0 # speed of new virus ejected from fed virus
-VIRUS_CORNER_MARGIN = 300.0  # distance from edge for corner viruses
-VIRUS_TARGET = 10         # target number of viruses to maintain
+VIRUS_CORNER_MARGIN = 100.0    # distance from edge for corner viruses
+VIRUS_TARGET = 32         # target number of viruses to maintain
 VIRUS_SPLIT_THRESHOLD = 150.0  # cells larger than this get split by virus
 
 # Spatial grid
@@ -82,6 +82,9 @@ VIEW_MASS_SCALE = 0.3    # viewport_w = VIEW_BASE_SIZE * (total_mass/100)^VIEW_M
 
 # Radius formula: radius = sqrt(mass) * 10
 RADIUS_FACTOR = 10.0
+
+# Corner kill zone
+CORNER_KILL_RADIUS = 400  # cells within this distance of any corner are destroyed
 
 # Leaderboard broadcast interval (in ticks)
 LEADERBOARD_INTERVAL = 10
@@ -95,3 +98,6 @@ BOT_BURST_INTERVAL = 30.0  # seconds between bursts
 
 # NEAT
 NEAT_SAVE_PATH = "neat_population.pkl"
+
+# Perception version — 1 = legacy 16-sector (177 inputs), 2 = raycast+quadrant (57 inputs)
+PERCEPTION_VERSION = 2

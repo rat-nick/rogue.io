@@ -24,7 +24,7 @@
   const ZOOM_MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.5, 4.0];
   const ZOOM_LABELS      = ['0.25×', '0.5×', '0.75×', '1×', '1.5×', '2.5×', '4×'];
   const TRAIN_PORT       = 8766;
-  const GENERATION_TIME  = 60.0; // must match server
+  const GENERATION_TIME  = 30.0; // must match server
 
   // ---- State ----
   let ws         = null;

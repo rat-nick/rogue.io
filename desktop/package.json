@@ -1,0 +1,14 @@
+{
+  "name": "rogue-io-trainer",
+  "version": "1.0.0",
+  "description": "Desktop training viewer for rogue.io",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

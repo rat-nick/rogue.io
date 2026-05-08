@@ -187,9 +187,33 @@
         flex-direction: column;
         padding: 10px 0 4px;
       }
-      #player-list-wrap .section-title {
+      .list-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         padding: 0 16px;
         margin-bottom: 4px;
+      }
+      #sort-toggle {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        padding: 2px 7px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+      }
+      #sort-toggle:hover {
+        background: rgba(68, 170, 255, 0.18);
+        color: #4af;
+        border-color: rgba(68, 170, 255, 0.4);
+      }
+      #sort-toggle.active {
+        background: rgba(68, 170, 255, 0.2);
+        color: #4af;
+        border-color: rgba(68, 170, 255, 0.5);
       }
       #player-list {
         flex: 1;
@@ -406,8 +430,9 @@
 
         <!-- Scrollable player / bot list -->
         <div id="player-list-wrap">
-          <div class="section-title">
-            PLAYERS <span id="player-count"></span>
+          <div class="list-header">
+            <div class="section-title" style="margin-bottom:0">PLAYERS <span id="player-count"></span></div>
+            <button id="sort-toggle" title="Toggle sort order">Mass ↓</button>
           </div>
           <div id="player-list"></div>
         </div>

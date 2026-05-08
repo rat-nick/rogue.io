@@ -55,6 +55,7 @@
     const alpha = Math.min((performance.now() - State.lastTickTime) / State.smoothTickMs, 1.0);
     const ownCells = State.getOwnCells();
 
+    State.updateMovingFood(dt / 1000);
     Viewport.update(ownCells, dt);
     Renderer.render(Viewport, alpha);
     Minimap.render(Viewport);

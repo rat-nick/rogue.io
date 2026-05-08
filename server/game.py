@@ -181,7 +181,7 @@ class GameWorld:
             # Maintain food level even with no players
             deficit = config.FOOD_TARGET - self.food_mgr.count()
             if deficit > 0:
-                self.food_mgr.spawn_batch(min(deficit, 50))
+                self.food_mgr.spawn_batch(deficit)
             self.food_mgr.flush_delta()
             return
 
@@ -193,6 +193,7 @@ class GameWorld:
             physics.apply_input(player, dt)
 
         physics.apply_split_velocity(self.players, self.cell_grid, dt)
+        physics.update_collision_restore_ticks(self.players)
 
         # Sync all moved cells into spatial grid
         all_cells = [c for p in self.players.values() for c in p.cells]
@@ -203,7 +204,7 @@ class GameWorld:
             self.cell_grid.remove(cell_id)
             self.cell_map.pop(cell_id, None)
         physics.apply_merge_attraction(self.players, self.cell_grid, dt)
-        physics.update_merge_timers(self.players, self.cell_grid, self.food_mgr, self.cell_map, dt)
+        physics.update_merge_timers(self.players, self.cell_grid, self.cell_map, dt)
         self.food_mgr.tick_decay(dt)
 
         physics.check_food_collisions(self.players, self.food_mgr, self.food_grid)
@@ -228,6 +229,30 @@ class GameWorld:
             if ejected_ids:
                 physics.check_ejected_virus_feeding(ejected_ids, self.food_mgr, self.virus_mgr, self.virus_grid)
 
+        # Corner kill zone: remove any cell within CORNER_KILL_RADIUS of a world corner
+        _ckr_sq = config.CORNER_KILL_RADIUS ** 2
+        _corners = [
+            (0.0, 0.0),
+            (float(config.WORLD_W), 0.0),
+            (0.0, float(config.WORLD_H)),
+            (float(config.WORLD_W), float(config.WORLD_H)),
+        ]
+        corner_killed_bots: set[int] = set()
+        for player in list(self.players.values()):
+            doomed = [
+                cell for cell in player.cells
+                if any(
+                    (cell.x - cx) ** 2 + (cell.y - cy) ** 2 <= _ckr_sq
+                    for cx, cy in _corners
+                )
+            ]
+            for cell in doomed:
+                player.cells.remove(cell)
+                self.cell_grid.remove(cell.id)
+                self.cell_map.pop(cell.id, None)
+                if player.id in self._bot_ids:
+                    corner_killed_bots.add(player.id)
+
         # Handle dead players (no cells left)
         dead_players = [p for p in self.players.values() if not p.cells]
         for player in dead_players:
@@ -237,11 +262,12 @@ class GameWorld:
                 if bs is not None:
                     bs['deaths'] += 1
                 genome, fitness = self._bot_controller.unregister(player.id)
-                if genome is not None:
+                # Corner-killed bots don't reproduce — skip adding genome to pool
+                if genome is not None and player.id not in corner_killed_bots:
                     self._genome_pool.add(genome, fitness)
                     self._bot_death_count += 1
                     if self._bot_death_count % 50 == 0:
-                        self._genome_pool.save(config.NEAT_SAVE_PATH)
+                        asyncio.create_task(self._genome_pool.save_async(config.NEAT_SAVE_PATH))
                         logger.info(
                             f"GA: gen={self._genome_pool.generation} "
                             f"deaths={self._genome_pool.total_deaths} "
@@ -261,7 +287,7 @@ class GameWorld:
             self.virus_mgr.respawn_to_target(config.VIRUS_TARGET)
         deficit = config.FOOD_TARGET - self.food_mgr.count()
         if deficit > 0:
-            self.food_mgr.spawn_batch(min(deficit, 50))
+            self.food_mgr.spawn_batch(deficit)
 
         # Build leaderboard every N ticks
         leaderboard = None
@@ -322,8 +348,6 @@ class GameWorld:
                     )
 
             # Bot respawn disabled: do not fill slots after cull
-                    await asyncio.sleep(0)  # yield to event loop after each bot spawn
-                logger.info(f"Bot burst: spawned {count} bots (total={len(self._bot_ids)})")
         # ---- Send to spectators ----
         if self._spectators:
             stats_pkt = None
@@ -511,6 +535,8 @@ class GameWorld:
         players_info = []
         for pid, p in self.players.items():
             cx, cy = p.centroid
+            is_bot = 1 if pid in self._bot_ids else 0
+            fitness = round(self._bot_controller.current_fitness(pid), 1) if is_bot else 0.0
             players_info.append([
                 pid,
                 p.name,
@@ -518,7 +544,8 @@ class GameWorld:
                 round(cx),
                 round(cy),
                 len(p.cells),
-                1 if pid in self._bot_ids else 0,
+                is_bot,
+                fitness,  # [7]
             ])
         return protocol.encode_stats(self.tick_counter, players_info, self.food_mgr.count())
 

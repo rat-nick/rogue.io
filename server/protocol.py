@@ -13,6 +13,10 @@ MSG_DEAD = 0x12
 
 # Manual next-generation trigger (client -> server)
 MSG_NEXT_GEN = 0x25
+# Toggle early-next-gen flag (client -> server): [MSG_SET_EARLY_NEXT_GEN, bool]
+MSG_SET_EARLY_NEXT_GEN = 0x26
+# Set simulation time scale (client -> server): [MSG_SET_TIME_SCALE, float]
+MSG_SET_TIME_SCALE = 0x27
 
 # Client -> Server input format: !BffB (10 bytes)
 # B = msg_type (0x01)
@@ -85,7 +89,7 @@ def encode_tick(
             hue  = None
         cells_out.append([c.id, round(c.x, 1), round(c.y, 1), round(c.mass, 2), pid, name, hue])
 
-    food_out = [[f.id, round(f.x, 1), round(f.y, 1), f.color_idx, round(f.mass, 1)] for f in food_new]
+    food_out = [[f.id, round(f.x, 1), round(f.y, 1), f.color_idx, round(f.mass, 1), round(f.vx, 1), round(f.vy, 1)] for f in food_new]
     
     virus_out = [[v.id, round(v.x, 1), round(v.y, 1), round(v.mass, 1)] for v in virus_new]
 
@@ -157,6 +161,8 @@ def encode_training_stats(
     total_deaths: int,
     players_info: list,  # same format as encode_stats: [[id, name, mass, cx, cy, cell_count, is_bot], ...]
     total_food: int,
+    early_next_gen: bool = True,
+    time_scale: float = 1.0,
 ) -> bytes:
     """Encode a training-mode stats packet for the training viewer."""
     return msgpack.packb(
@@ -173,6 +179,8 @@ def encode_training_stats(
             total_deaths,
             players_info,
             total_food,
+            1 if early_next_gen else 0,  # msg[12]
+            round(time_scale, 2),         # msg[13]
         ],
         use_bin_type=True,
     )
