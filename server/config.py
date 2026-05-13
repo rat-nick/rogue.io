@@ -91,8 +91,8 @@ LEADERBOARD_INTERVAL = 10
 DETACHED_DECAY_MULTIPLIER = 3.0   # split cells lose mass 3x faster
 
 # Bot population (NEAT)
-BOT_START = 25          # bots spawned at server start
-BOT_MAX   = 25          # hard cap on concurrent bots
+BOT_START = 50          # bots spawned at server start
+BOT_MAX   = 50          # hard cap on concurrent bots
 BOT_BURST = 50         # bots added per burst cycle
 BOT_BURST_INTERVAL = 30.0  # seconds between bursts
 
