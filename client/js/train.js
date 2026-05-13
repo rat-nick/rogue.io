@@ -20,16 +20,19 @@
   const MSG_TICK           = 0x11;
   const MSG_TRAINING_STATS = 0x24;
   const MSG_NEXT_GEN       = 0x25;
+  const MSG_PPO_STATS      = 0x30;
 
   const ZOOM_MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.5, 4.0];
   const ZOOM_LABELS      = ['0.25×', '0.5×', '0.75×', '1×', '1.5×', '2.5×', '4×'];
   const TRAIN_PORT       = 8766;
+  const PPO_PORT         = 8767;
   const GENERATION_TIME  = 30.0; // must match server
 
   // ---- State ----
-  let ws         = null;
-  let followId   = null;
-  let zoomIdx    = 3;
+  let ws          = null;
+  let followId    = null;
+  let zoomIdx     = 3;
+  let currentMode = 'neat'; // 'neat' | 'ppo'
 
   // Training HUD data (from MSG_TRAINING_STATS)
   let trainGeneration  = 0;
@@ -42,6 +45,14 @@
   let trainDeaths      = 0;
   let trainPlayersInfo = [];  // [[id, name, mass, cx, cy, cells, is_bot], ...]
   let trainTotalFood   = 0;
+
+  // PPO-specific stats (from MSG_PPO_STATS)
+  let ppoRollout  = 0;
+  let ppoEnvSteps = 0;
+  let ppoPgLoss   = 0;
+  let ppoVfLoss   = 0;
+  let ppoEntropy  = 0;
+  let ppoKl       = 0;
 
   // TPS tracking
   let tpsTickCount = 0;
@@ -75,6 +86,18 @@
   const zoomInBtn    = document.getElementById('zoom-in');
   const zoomOutBtn   = document.getElementById('zoom-out');
   const nextGenBtn   = document.getElementById('next-gen-btn');
+  const modeNeatBtn  = document.getElementById('mode-neat');
+  const modePpoBtn   = document.getElementById('mode-ppo');
+  const modeTitleEl  = document.getElementById('mode-title');
+  const ppoPanelEl   = document.getElementById('ppo-panel');
+  const genPanelEl   = document.getElementById('gen-panel');
+  const ppoRolloutEl = document.getElementById('ppo-rollout');
+  const ppoStepsEl   = document.getElementById('ppo-env-steps');
+  const ppoPgEl      = document.getElementById('ppo-pg-loss');
+  const ppoVfEl      = document.getElementById('ppo-vf-loss');
+  const ppoEntEl     = document.getElementById('ppo-entropy');
+  const ppoKlEl      = document.getElementById('ppo-kl');
+  const neatOnlyEls  = document.querySelectorAll('.neat-only');
 
   // ---- Init subsystems ----
   Renderer.init(canvas);
@@ -98,6 +121,37 @@
     e.preventDefault();
     applyZoom(e.deltaY < 0 ? zoomIdx + 1 : zoomIdx - 1);
   }, { passive: false });
+
+  // ---- Mode switching ----
+  function switchMode(mode) {
+    if (mode === currentMode) return;
+    currentMode = mode;
+    followId = null;
+    trainPlayersInfo = [];
+
+    // Toggle button active state
+    if (modeNeatBtn) modeNeatBtn.classList.toggle('active', mode === 'neat');
+    if (modePpoBtn)  modePpoBtn.classList.toggle('active',  mode === 'ppo');
+
+    // Update sidebar title
+    if (modeTitleEl) modeTitleEl.textContent = mode === 'neat' ? '🧬 NEAT' : '⚡ PPO';
+
+    // Show/hide mode-specific panels
+    if (genPanelEl)  genPanelEl.style.display  = mode === 'neat' ? '' : 'none';
+    if (ppoPanelEl)  ppoPanelEl.style.display  = mode === 'ppo'  ? '' : 'none';
+    if (nextGenBtn)  nextGenBtn.style.display  = mode === 'neat' ? '' : 'none';
+    neatOnlyEls.forEach(el => { el.style.display = mode === 'neat' ? '' : 'none'; });
+
+    // Update banner
+    if (genBanner) genBanner.textContent = mode === 'neat' ? 'Gen — \u00a0|\u00a0 —s' : 'Rollout —  |  — steps';
+
+    // Reconnect to the appropriate server
+    if (ws) { ws.close(); ws = null; }
+    connect();
+  }
+
+  if (modeNeatBtn) modeNeatBtn.addEventListener('click', () => switchMode('neat'));
+  if (modePpoBtn)  modePpoBtn.addEventListener('click',  () => switchMode('ppo'));
 
   // ---- Next Generation Button ----
   if (nextGenBtn) {
@@ -131,7 +185,8 @@
 
   // ---- Network ----
   function connect() {
-    const host = `ws://${window.location.hostname}:${TRAIN_PORT}`;
+    const port = currentMode === 'ppo' ? PPO_PORT : TRAIN_PORT;
+    const host = `ws://${window.location.hostname}:${port}`;
     ws = new WebSocket(host);
     ws.binaryType = 'arraybuffer';
 
@@ -174,6 +229,21 @@
           trainTotalFood   = msg[11] || 0;
           console.log('Training stats received:', { generation: trainGeneration, bots: trainPlayersInfo.length });
           _updateHUD();
+
+        } else if (type === MSG_PPO_STATS) {
+          // [MSG_PPO_STATS, rollout, env_steps, n_bots, avg_fitness,
+          //  pg_loss, vf_loss, entropy, approx_kl, players_info, food_count]
+          ppoRollout       = msg[1]  || 0;
+          ppoEnvSteps      = msg[2]  || 0;
+          trainPopSize     = msg[3]  || 0;
+          trainAvgFit      = msg[4]  || 0;
+          ppoPgLoss        = msg[5]  || 0;
+          ppoVfLoss        = msg[6]  || 0;
+          ppoEntropy       = msg[7]  || 0;
+          ppoKl            = msg[8]  || 0;
+          trainPlayersInfo = msg[9]  || [];
+          trainTotalFood   = msg[10] || 0;
+          _updateHUD();
         }
       } catch (e) {
         console.warn('train decode error', e);
@@ -199,16 +269,27 @@
   }
 
   function _updateHUD() {
-    if (genNum)       genNum.textContent       = trainGeneration;
-    if (genTime)      genTime.textContent      = trainTimeLeft.toFixed(1) + 's';
-    if (timeBar)      timeBar.style.width      = Math.round((trainTimeLeft / GENERATION_TIME) * 100) + '%';
-    if (genBanner)    genBanner.textContent    = `Gen ${trainGeneration}  |  ${trainTimeLeft.toFixed(0)}s`;
-    if (topFitnessEl) topFitnessEl.textContent = _fmtNum(trainTopFit);
+    if (currentMode === 'ppo') {
+      // PPO-specific panel
+      if (ppoRolloutEl) ppoRolloutEl.textContent = ppoRollout;
+      if (ppoStepsEl)   ppoStepsEl.textContent   = _fmtNum(ppoEnvSteps);
+      if (ppoPgEl)      ppoPgEl.textContent       = ppoPgLoss.toFixed(4);
+      if (ppoVfEl)      ppoVfEl.textContent       = ppoVfLoss.toFixed(4);
+      if (ppoEntEl)     ppoEntEl.textContent      = ppoEntropy.toFixed(4);
+      if (ppoKlEl)      ppoKlEl.textContent       = ppoKl.toFixed(5);
+      if (genBanner)    genBanner.textContent     = `Rollout ${ppoRollout}  |  ${_fmtNum(ppoEnvSteps)} steps`;
+    } else {
+      if (genNum)       genNum.textContent       = trainGeneration;
+      if (genTime)      genTime.textContent      = trainTimeLeft.toFixed(1) + 's';
+      if (timeBar)      timeBar.style.width      = Math.round((trainTimeLeft / GENERATION_TIME) * 100) + '%';
+      if (genBanner)    genBanner.textContent    = `Gen ${trainGeneration}  |  ${trainTimeLeft.toFixed(0)}s`;
+      if (topFitnessEl) topFitnessEl.textContent = _fmtNum(trainTopFit);
+      if (genDeathsEl)  genDeathsEl.textContent  = trainDeaths;
+    }
     if (avgFitnessEl) avgFitnessEl.textContent = _fmtNum(trainAvgFit);
     if (bestMassEl)   bestMassEl.textContent   = _fmtNum(trainBestMass);
     if (avgMassEl)    avgMassEl.textContent    = _fmtNum(trainAvgMass);
     if (popSizeEl)    popSizeEl.textContent    = trainPopSize;
-    if (genDeathsEl)  genDeathsEl.textContent  = trainDeaths;
     if (statsFoodEl)  statsFoodEl.textContent  = trainTotalFood.toLocaleString();
 
     // Update follow panel stats

@@ -36,7 +36,9 @@ def _random_bot_name() -> str:
 
 
 class GameWorld:
-    def __init__(self) -> None:
+    def __init__(self, bot_mode: str = 'neat') -> None:
+        self._bot_mode = bot_mode  # 'neat' | 'ppo'
+
         # ID counters
         self._player_id_counter = itertools.count(1)
         self._cell_id_counter   = itertools.count(1)
@@ -65,11 +67,32 @@ class GameWorld:
 
         # Bots
         self._bot_ids: set[int] = set()
-        self._bot_controller = BotController()
-        # Genetic algorithm
-        self._genome_pool: GenomePool = GenomePool.load(config.NEAT_SAVE_PATH)
-        self._bot_death_count: int = 0
-        self._burst_elapsed: float = 0.0  # seconds since last bot burst
+        if bot_mode == 'ppo':
+            from .ppo_agent import ActorCritic, N_OBS
+            from .ppo_bot import PPOBotController
+            from .ppo_train import PPO_SAVE_PATH
+            import torch
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            n_bots = config.BOT_START
+            try:
+                model = ActorCritic.load(PPO_SAVE_PATH, device=device)
+                logger.info(f"[PPO] Loaded checkpoint from {PPO_SAVE_PATH}")
+            except Exception:
+                model = ActorCritic(n_obs=N_OBS).to(device)
+                logger.info(f"[PPO] No checkpoint found — starting fresh policy")
+            n_bots = config.BOT_START
+            self._bot_controller = PPOBotController(
+                n_bots=n_bots, model=model, inference_only=True, device=device
+            )
+            self._genome_pool = None
+            self._bot_death_count = 0
+            self._burst_elapsed   = 0.0
+        else:
+            self._bot_controller = BotController()
+            # Genetic algorithm
+            self._genome_pool: GenomePool = GenomePool.load(config.NEAT_SAVE_PATH)
+            self._bot_death_count: int = 0
+            self._burst_elapsed: float = 0.0  # seconds since last bot burst
 
         # Spectators: spec_id -> {ws, follow_id, zoom_idx, known_player_ids, sent_food_ids}
         self._spectators: dict[int, dict] = {}
@@ -85,13 +108,16 @@ class GameWorld:
         self.food_mgr.flush_delta()
 
     def seed_viruses(self) -> None:
-        """Spawn initial viruses in corners and random positions."""
-        self.virus_mgr.spawn_corners()
+        """Spawn initial viruses at random positions."""
         self.virus_mgr.respawn_to_target(config.VIRUS_TARGET)
         self.virus_mgr.flush_delta()
 
     def seed_bots(self) -> None:
-        """Spawn BOT_COUNT bots. Uses best genome from pool if available."""
+        """Spawn BOT_COUNT bots. Uses best genome from pool if available (NEAT only)."""
+        if self._bot_mode == 'ppo':
+            for _ in range(config.BOT_START):
+                self._spawn_bot()
+            return
         best = self._genome_pool.best(1)
         best_genome = best[0][1] if best else None
         if best_genome is not None:
@@ -186,7 +212,21 @@ class GameWorld:
             return
 
         # ---- Bot AI ----
-        self._bot_controller.update(self, dt)
+        try:
+            self._bot_controller.update(self, dt)
+        except Exception as exc:
+            logger.warning(f"Bot controller error: {exc}")
+
+        # ---- PPO rollout update (training world only — skipped in game server) ----
+        if self._bot_mode == 'ppo' and self._bot_controller.is_rollout_full():
+            stats = await asyncio.to_thread(self._do_ppo_update)
+            self._bot_controller.reset_rollout()
+            logger.info(
+                f"[PPO] rollout complete | "
+                f"pg={stats.get('pg_loss',0):.4f} "
+                f"vf={stats.get('vf_loss',0):.4f} "
+                f"ent={stats.get('entropy',0):.4f}"
+            )
 
         # ---- Physics ----
         for player in list(self.players.values()):
@@ -257,24 +297,31 @@ class GameWorld:
         dead_players = [p for p in self.players.values() if not p.cells]
         for player in dead_players:
             if player.id in self._bot_ids:
-                # Record fitness and remove bot from active world; refill happens on burst.
-                bs = self._bot_controller._state.get(player.id)
-                if bs is not None:
-                    bs['deaths'] += 1
-                genome, fitness = self._bot_controller.unregister(player.id)
-                # Corner-killed bots don't reproduce — skip adding genome to pool
-                if genome is not None and player.id not in corner_killed_bots:
-                    self._genome_pool.add(genome, fitness)
-                    self._bot_death_count += 1
-                    if self._bot_death_count % 50 == 0:
-                        asyncio.create_task(self._genome_pool.save_async(config.NEAT_SAVE_PATH))
-                        logger.info(
-                            f"GA: gen={self._genome_pool.generation} "
-                            f"deaths={self._genome_pool.total_deaths} "
-                            f"pool_size={len(self._genome_pool._pool)}"
-                        )
-                self._bot_ids.discard(player.id)
-                self.players.pop(player.id, None)
+                if self._bot_mode == 'ppo':
+                    # PPO: just respawn immediately, no genome pool
+                    self._bot_controller.unregister(player.id)
+                    self._bot_ids.discard(player.id)
+                    self.players.pop(player.id, None)
+                    self._spawn_bot()
+                else:
+                    # NEAT: record fitness, add genome to pool
+                    bs = self._bot_controller._state.get(player.id)
+                    if bs is not None:
+                        bs['deaths'] += 1
+                    genome, fitness = self._bot_controller.unregister(player.id)
+                    # Corner-killed bots don't reproduce — skip adding genome to pool
+                    if genome is not None and player.id not in corner_killed_bots:
+                        self._genome_pool.add(genome, fitness)
+                        self._bot_death_count += 1
+                        if self._bot_death_count % 50 == 0:
+                            asyncio.create_task(self._genome_pool.save_async(config.NEAT_SAVE_PATH))
+                            logger.info(
+                                f"GA: gen={self._genome_pool.generation} "
+                                f"deaths={self._genome_pool.total_deaths} "
+                                f"pool_size={len(self._genome_pool._pool)}"
+                            )
+                    self._bot_ids.discard(player.id)
+                    self.players.pop(player.id, None)
             else:
                 await self._send_dead(player, score=0, killer_name="")
                 self._respawn_player(player)
@@ -311,43 +358,44 @@ class GameWorld:
             pkt = self._build_tick_packet(player, food_removed, virus_removed, leaderboard)
             send_tasks.append(self._safe_send(player.websocket, pkt))
 
-        # ---- Bot burst spawning ----
-        self._burst_elapsed += dt
-        if self._burst_elapsed >= config.BOT_BURST_INTERVAL:
-            self._burst_elapsed = 0.0
+        # ---- Bot burst spawning (NEAT only) ----
+        if self._bot_mode != 'ppo':
+            self._burst_elapsed += dt
+            if self._burst_elapsed >= config.BOT_BURST_INTERVAL:
+                self._burst_elapsed = 0.0
 
-            # Cull bots below median fitness
-            bot_players = [self.players[pid] for pid in list(self._bot_ids) if pid in self.players]
-            if len(bot_players) >= 2:
-                fitnesses = sorted(self._bot_controller.current_fitness(p.id) for p in bot_players)
-                mid = len(fitnesses) // 2
-                median_fitness = (
-                    (fitnesses[mid - 1] + fitnesses[mid]) / 2.0
-                    if len(fitnesses) % 2 == 0
-                    else fitnesses[mid]
-                )
-                culled = 0
-                for player in bot_players:
-                    fitness = self._bot_controller.current_fitness(player.id)
-                    if fitness < median_fitness:
-                        genome, fitness = self._bot_controller.unregister(player.id)
-                        if genome is not None:
-                            self._genome_pool.add(genome, fitness)
-                            self._bot_death_count += 1
-                        # Clear cells so the player is removed from the world
-                        for cell in list(player.cells):
-                            self.cell_grid.remove(cell.id)
-                            self.cell_map.pop(cell.id, None)
-                        player.cells.clear()
-                        self._bot_ids.discard(player.id)
-                        self.players.pop(player.id, None)
-                        culled += 1
-                if culled:
-                    logger.info(
-                        f"Bot cull: removed {culled} bots below median fitness {median_fitness:.1f}"
+                # Cull bots below median fitness
+                bot_players = [self.players[pid] for pid in list(self._bot_ids) if pid in self.players]
+                if len(bot_players) >= 2:
+                    fitnesses = sorted(self._bot_controller.current_fitness(p.id) for p in bot_players)
+                    mid = len(fitnesses) // 2
+                    median_fitness = (
+                        (fitnesses[mid - 1] + fitnesses[mid]) / 2.0
+                        if len(fitnesses) % 2 == 0
+                        else fitnesses[mid]
                     )
+                    culled = 0
+                    for player in bot_players:
+                        fitness = self._bot_controller.current_fitness(player.id)
+                        if fitness < median_fitness:
+                            genome, fitness = self._bot_controller.unregister(player.id)
+                            if genome is not None:
+                                self._genome_pool.add(genome, fitness)
+                                self._bot_death_count += 1
+                            # Clear cells so the player is removed from the world
+                            for cell in list(player.cells):
+                                self.cell_grid.remove(cell.id)
+                                self.cell_map.pop(cell.id, None)
+                            player.cells.clear()
+                            self._bot_ids.discard(player.id)
+                            self.players.pop(player.id, None)
+                            culled += 1
+                    if culled:
+                        logger.info(
+                            f"Bot cull: removed {culled} bots below median fitness {median_fitness:.1f}"
+                        )
 
-            # Bot respawn disabled: do not fill slots after cull
+                # Bot respawn disabled: do not fill slots after cull
         # ---- Send to spectators ----
         if self._spectators:
             stats_pkt = None
@@ -554,19 +602,26 @@ class GameWorld:
     # ------------------------------------------------------------------
 
     def _spawn_bot(self, genome=None) -> None:
-        """Create a new bot player. If genome is None, breeds one from the pool."""
-        if genome is None:
-            genome = self._genome_pool.breed()
-        pid = next(self._player_id_counter)
+        """Create a new bot player."""
+        pid  = next(self._player_id_counter)
         name = _random_bot_name()
-        bot = Player(id=pid, name=name, websocket=NullWebSocket())
+        bot  = Player(id=pid, name=name, websocket=NullWebSocket())
         self.players[pid] = bot
         self._bot_ids.add(pid)
         x = random.uniform(config.WORLD_W * 0.05, config.WORLD_W * 0.95)
         y = random.uniform(config.WORLD_H * 0.05, config.WORLD_H * 0.95)
         self._create_cell(bot, x, y, mass=10.0)
-        bot.hue = genome_hue(genome)
-        self._bot_controller.register(pid, x, y, genome)
+        if self._bot_mode == 'ppo':
+            self._bot_controller.register(pid, x, y)
+        else:
+            if genome is None:
+                genome = self._genome_pool.breed()
+            bot.hue = genome_hue(genome)
+            self._bot_controller.register(pid, x, y, genome)
+
+    def _do_ppo_update(self) -> dict:
+        """Run PPO update synchronously (called via asyncio.to_thread)."""
+        return self._bot_controller.finish_rollout(self)
 
     def _spawn_player_replacing_bot(self, player_id: int, name: str, websocket) -> Player:
         """Spawn a real player, removing a random bot to keep population stable."""

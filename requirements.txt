@@ -1,3 +1,4 @@
 websockets>=13.0
 msgpack>=1.0.0
 neat-python>=0.92
+torch>=2.0.0

@@ -17,6 +17,8 @@ MSG_NEXT_GEN = 0x25
 MSG_SET_EARLY_NEXT_GEN = 0x26
 # Set simulation time scale (client -> server): [MSG_SET_TIME_SCALE, float]
 MSG_SET_TIME_SCALE = 0x27
+# Set training parameters for next generation (client -> server): [MSG_SET_TRAINING_PARAMS, {key: value, ...}]
+MSG_SET_TRAINING_PARAMS = 0x28
 
 # Client -> Server input format: !BffB (10 bytes)
 # B = msg_type (0x01)
@@ -163,6 +165,7 @@ def encode_training_stats(
     total_food: int,
     early_next_gen: bool = True,
     time_scale: float = 1.0,
+    params: dict | None = None,  # msg[14]: current training params dict
 ) -> bytes:
     """Encode a training-mode stats packet for the training viewer."""
     return msgpack.packb(
@@ -181,6 +184,7 @@ def encode_training_stats(
             total_food,
             1 if early_next_gen else 0,  # msg[12]
             round(time_scale, 2),         # msg[13]
+            params or {},                 # msg[14]
         ],
         use_bin_type=True,
     )

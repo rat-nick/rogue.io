@@ -1,6 +1,7 @@
 """rogue.io - authoritative game server entry point."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import functools
 import http.server
@@ -35,15 +36,21 @@ def _run_http_server() -> None:
 async def main() -> None:
     import websockets.asyncio.server as ws_server  # type: ignore
 
+    parser = argparse.ArgumentParser(description='rogue.io game server')
+    parser.add_argument('--ppo', action='store_true', help='Use PPO bots instead of NEAT bots')
+    args = parser.parse_args()
+    bot_mode = 'ppo' if args.ppo else 'neat'
+
     threading.Thread(target=_run_http_server, daemon=True).start()
     logger.info(f"Game client at http://localhost:{HTTP_PORT}")
 
-    world = GameWorld()
+    world = GameWorld(bot_mode=bot_mode)
     world.seed_food()
     world.seed_viruses()
     world.seed_bots()
     logger.info(f"Food seeded: {world.food_mgr.count()} pellets")
     logger.info(f"Viruses seeded: {world.virus_mgr.count()} viruses")
+    logger.info(f"Bot mode: {bot_mode.upper()}")
 
     tick_task = asyncio.create_task(world.tick_loop())
 

@@ -2,7 +2,7 @@
 NEAT-based genome pool for evolving bot neural networks.
 
 Each genome is a neat.DefaultGenome whose weights/topology are evolved by
-NEAT operators (crossover + mutation).  The network takes 56 sensory inputs
+NEAT operators (crossover + mutation).  The network takes 74 sensory inputs
 and produces 4 action outputs — no hand-coded thresholds or decision trees.
 
 Output layout (4):
@@ -26,7 +26,7 @@ from . import config as _cfg
 # NEAT config (loaded once at module import)
 # ---------------------------------------------------------------------------
 
-_CFG_NAME = 'neat_v2.cfg' if _cfg.PERCEPTION_VERSION == 2 else 'neat.cfg'
+_CFG_NAME = 'neat_v2.cfg' if _cfg.PERCEPTION_VERSION == 2 else '_neat.cfg'
 _CFG_PATH = os.path.join(os.path.dirname(__file__), _CFG_NAME)
 neat_config = neat.Config(
     neat.DefaultGenome,
@@ -73,7 +73,10 @@ def genome_hue(genome: neat.DefaultGenome) -> int:
 # ---------------------------------------------------------------------------
 
 _POOL_MAX_SIZE = 200
-_TOURNAMENT_K  = 3
+# Tournament size 4 raises selection pressure slightly above the canonical 3,
+# which helps once Hebbian-tuned survivors begin to dominate fitness — without
+# this, weak parents win too many tournaments by luck and slow exploitation.
+_TOURNAMENT_K  = 4
 
 
 def _write_pickle(data: dict, path: str) -> None:
@@ -97,6 +100,7 @@ class GenomePool:
         self.generation: int = 0
         self.total_deaths: int = 0
         self.species_count: int = 0
+        self.tournament_k: int = _TOURNAMENT_K
         _innovation_tracker.reset_generation()
 
     # ------------------------------------------------------------------
@@ -194,7 +198,7 @@ class GenomePool:
         self.species_count = len(species_members)
 
     def _tournament_select(self) -> dict:
-        k = min(_TOURNAMENT_K, len(self._pool))
+        k = min(self.tournament_k, len(self._pool))
         contestants = random.sample(self._pool, k)
         # Fitness sharing: downweight genomes whose species is already crowded so
         # structurally diverse lineages get a fair shot at being selected as parents.

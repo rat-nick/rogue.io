@@ -480,14 +480,197 @@
         transition: width 0.4s ease;
         pointer-events: none;
       }
+      .br-species {
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+        transition:
+          background 0.1s,
+          color 0.1s,
+          border-color 0.1s;
+        user-select: none;
+      }
+      .br-species:hover {
+        background: rgba(255, 255, 255, 0.18);
+        color: rgba(255, 255, 255, 0.9);
+      }
+      .br-species.selected {
+        background: rgba(255, 220, 0, 0.2);
+        color: #ffd700;
+        border-color: rgba(255, 220, 0, 0.45);
+      }
+      .bot-row.species-hl {
+        background: rgba(255, 220, 0, 0.06);
+      }
 
       /* ── Charts pane ── */
       #pane-charts {
         flex-direction: column;
-        padding: 20px;
-        gap: 16px;
-        overflow-y: auto;
         background: var(--bg);
+        overflow: hidden;
+      }
+      #charts-header {
+        flex-shrink: 0;
+        background: var(--bg2);
+        border-bottom: 1px solid var(--border);
+        padding: 16px 20px 0;
+      }
+      #charts-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 0 10px;
+      }
+      #charts-body {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+      #charts-left {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      #charts-left::-webkit-scrollbar {
+        width: 4px;
+      }
+      #charts-left::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+      }
+      #chart-species canvas {
+        height: 160px !important;
+      }
+      #species-panel {
+        width: 270px;
+        flex-shrink: 0;
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--bg2);
+      }
+      .sp-header {
+        flex-shrink: 0;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #sp-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 6px 8px;
+      }
+      #sp-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      #sp-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+      }
+      .sp-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+      .sp-row:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .sp-row.sp-selected {
+        background: rgba(255, 220, 0, 0.08);
+        outline: 1px solid rgba(255, 220, 0, 0.25);
+        outline-offset: -1px;
+      }
+      .sp-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .sp-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .sp-name {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-mid);
+        font-variant-numeric: tabular-nums;
+      }
+      .sp-bar-wrap {
+        height: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 2px;
+        margin-top: 3px;
+      }
+      .sp-bar {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.4s;
+      }
+      .sp-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 1px;
+        flex-shrink: 0;
+      }
+      .sp-stat-count {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--accent2);
+        font-variant-numeric: tabular-nums;
+      }
+      .sp-stat-fit {
+        font-size: 10px;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      .ct-label {
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .ct-sep {
+        width: 1px;
+        height: 16px;
+        background: var(--border);
+        margin: 0 2px;
+      }
+      .ct-btn {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid var(--border);
+        color: var(--text-mid);
+        border-radius: 5px;
+        padding: 3px 10px;
+        font-size: 11px;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          color 0.15s;
+      }
+      .ct-btn:hover {
+        background: rgba(255, 255, 255, 0.14);
+        color: #fff;
+      }
+      .ct-btn.ct-active {
+        background: rgba(250, 170, 0, 0.15);
+        border-color: rgba(250, 170, 0, 0.4);
+        color: var(--accent);
       }
       .chart-card {
         background: var(--bg2);
@@ -515,10 +698,10 @@
         height: 180px !important;
       }
       #chart-fitness canvas {
-        height: 220px !important;
+        height: 200px !important;
       }
       #chart-mass canvas {
-        height: 220px !important;
+        height: 200px !important;
       }
 
       /* Stat summary cards */
@@ -631,6 +814,107 @@
         display: none;
       }
 
+      /* ── Controls pane ── */
+      #pane-controls {
+        flex-direction: column;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      #ctrl-scroll {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      #ctrl-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      #ctrl-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+      }
+      .ctrl-info {
+        background: rgba(68, 170, 255, 0.08);
+        border: 1px solid rgba(68, 170, 255, 0.2);
+        border-radius: 6px;
+        padding: 8px 14px;
+        font-size: 12px;
+        color: var(--text-mid);
+        flex-shrink: 0;
+      }
+      .ctrl-card {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        flex-shrink: 0;
+      }
+      .ctrl-card h3 {
+        font-size: 11px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-bottom: 10px;
+      }
+      .ctrl-row {
+        display: grid;
+        grid-template-columns: 170px 1fr 72px;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 0;
+      }
+      .ctrl-row label {
+        font-size: 11px;
+        color: var(--text-dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: default;
+      }
+      .ctrl-row.dirty label {
+        color: var(--accent);
+      }
+      .ctrl-slider {
+        width: 100%;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      .ctrl-num {
+        background: var(--bg3);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-size: 12px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        width: 100%;
+      }
+      .ctrl-num:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .ctrl-num.dirty {
+        border-color: rgba(250, 170, 0, 0.6);
+        color: var(--accent);
+      }
+      .ctrl-badge {
+        display: inline-block;
+        background: var(--accent);
+        color: #000;
+        border-radius: 8px;
+        padding: 0 5px;
+        font-size: 9px;
+        font-weight: 700;
+        min-width: 16px;
+        text-align: center;
+        margin-left: 3px;
+        vertical-align: middle;
+        line-height: 15px;
+      }
+
       /* ── Logs pane ── */
       #pane-logs {
         flex-direction: column;
@@ -710,6 +994,47 @@
         font-size: 10px;
         font-family: inherit;
       }
+
+      /* ── NEAT / PPO mode toggle ── */
+      #mode-toggle {
+        display: flex;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px;
+        gap: 2px;
+      }
+      .mode-btn {
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+      }
+      .mode-btn.active {
+        background: var(--accent);
+        color: #000;
+      }
+      .mode-btn:hover:not(.active) {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      /* PPO sidebar stats */
+      #ppo-section {
+        background: rgba(68, 170, 255, 0.04);
+        display: none;
+      }
+      .ppo-val {
+        color: var(--accent2);
+        font-variant-numeric: tabular-nums;
+      }
     </style>
   </head>
   <body>
@@ -717,6 +1042,23 @@
       <!-- ── Top bar ── -->
       <div id="topbar">
         <span class="tb-logo">🧬 rogue.io</span>
+        <div class="tb-sep"></div>
+
+        <!-- NEAT / PPO mode toggle -->
+        <div id="mode-toggle">
+          <button
+            class="mode-btn active"
+            id="mode-neat"
+          >
+            NEAT
+          </button>
+          <button
+            class="mode-btn"
+            id="mode-ppo"
+          >
+            ⚡ PPO
+          </button>
+        </div>
         <div class="tb-sep"></div>
 
         <!-- Server controls -->
@@ -749,12 +1091,41 @@
           ⚡ Auto End: ON
         </button>
         <div class="tb-sep"></div>
-        <span style="font-size:11px;color:var(--text-dim);flex-shrink:0">Speed</span>
-        <div id="speed-btns" style="display:flex;gap:3px">
-          <button class="tb-btn speed-btn active-toggle" data-scale="1" disabled>1×</button>
-          <button class="tb-btn speed-btn" data-scale="2" disabled>2×</button>
-          <button class="tb-btn speed-btn" data-scale="4" disabled>4×</button>
-          <button class="tb-btn speed-btn" data-scale="8" disabled>8×</button>
+        <span style="font-size: 11px; color: var(--text-dim); flex-shrink: 0"
+          >Speed</span
+        >
+        <div
+          id="speed-btns"
+          style="display: flex; gap: 3px"
+        >
+          <button
+            class="tb-btn speed-btn active-toggle"
+            data-scale="1"
+            disabled
+          >
+            1×
+          </button>
+          <button
+            class="tb-btn speed-btn"
+            data-scale="2"
+            disabled
+          >
+            2×
+          </button>
+          <button
+            class="tb-btn speed-btn"
+            data-scale="4"
+            disabled
+          >
+            4×
+          </button>
+          <button
+            class="tb-btn speed-btn"
+            data-scale="8"
+            disabled
+          >
+            8×
+          </button>
         </div>
         <div class="tb-sep"></div>
         <div id="server-status">
@@ -783,6 +1154,17 @@
             data-tab="config"
           >
             Config
+          </button>
+          <button
+            class="tab-btn"
+            data-tab="controls"
+          >
+            Controls<span
+              id="ctrl-tab-badge"
+              class="ctrl-badge"
+              style="display: none"
+              >0</span
+            >
           </button>
           <button
             class="tab-btn"
@@ -823,8 +1205,11 @@
 
             <!-- Sidebar -->
             <div id="sidebar">
-              <!-- Gen panel -->
-              <div class="sb-section">
+              <!-- Gen panel (NEAT only) -->
+              <div
+                class="sb-section"
+                id="gen-section"
+              >
                 <div class="section-label">Generation</div>
                 <div class="stat-row">
                   <span class="stat-key">Generation</span
@@ -850,10 +1235,69 @@
                 </div>
               </div>
 
-              <!-- Fitness / mass -->
+              <!-- PPO stats section (hidden in NEAT mode) -->
+              <div
+                class="sb-section"
+                id="ppo-section"
+              >
+                <div class="section-label">PPO Training</div>
+                <div class="stat-row">
+                  <span class="stat-key">Rollout</span>
+                  <span
+                    class="stat-val hi"
+                    id="ppo-rollout"
+                    >—</span
+                  >
+                </div>
+                <div class="stat-row">
+                  <span class="stat-key">Env steps</span>
+                  <span
+                    class="stat-val"
+                    id="ppo-env-steps"
+                    >—</span
+                  >
+                </div>
+                <div class="stat-row">
+                  <span class="stat-key">Policy loss</span>
+                  <span
+                    class="stat-val ppo-val"
+                    id="ppo-pg-loss"
+                    >—</span
+                  >
+                </div>
+                <div class="stat-row">
+                  <span class="stat-key">Value loss</span>
+                  <span
+                    class="stat-val ppo-val"
+                    id="ppo-vf-loss"
+                    >—</span
+                  >
+                </div>
+                <div class="stat-row">
+                  <span class="stat-key">Entropy</span>
+                  <span
+                    class="stat-val ppo-val"
+                    id="ppo-entropy"
+                    >—</span
+                  >
+                </div>
+                <div class="stat-row">
+                  <span class="stat-key">Approx KL</span>
+                  <span
+                    class="stat-val ppo-val"
+                    id="ppo-kl"
+                    >—</span
+                  >
+                </div>
+              </div>
+
+              <!-- Fitness / mass (shared) -->
               <div class="sb-section">
                 <div class="section-label">Stats</div>
-                <div class="stat-row">
+                <div
+                  class="stat-row"
+                  id="row-topfit"
+                >
                   <span class="stat-key">Top fitness</span
                   ><span
                     class="stat-val hi"
@@ -893,7 +1337,10 @@
                     >—</span
                   >
                 </div>
-                <div class="stat-row">
+                <div
+                  class="stat-row"
+                  id="row-deaths"
+                >
                   <span class="stat-key">Deaths</span>
                   <span
                     class="stat-val"
@@ -951,9 +1398,30 @@
 
               <!-- Bot list -->
               <div class="sb-section grow">
-                <div class="section-label" style="display:flex;align-items:center;justify-content:space-between">
+                <div
+                  class="section-label"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                  "
+                >
                   <span>Bots <span id="bot-count"></span></span>
-                  <button id="bot-sort-toggle" title="Toggle sort order" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.55);font-size:10px;padding:2px 7px;border-radius:10px;cursor:pointer">Mass ↓</button>
+                  <button
+                    id="bot-sort-toggle"
+                    title="Toggle sort order"
+                    style="
+                      background: rgba(255, 255, 255, 0.08);
+                      border: 1px solid rgba(255, 255, 255, 0.15);
+                      color: rgba(255, 255, 255, 0.55);
+                      font-size: 10px;
+                      padding: 2px 7px;
+                      border-radius: 10px;
+                      cursor: pointer;
+                    "
+                  >
+                    Mass ↓
+                  </button>
                 </div>
                 <div id="bot-list-scroll">
                   <div id="bot-list"></div>
@@ -971,68 +1439,131 @@
           id="pane-charts"
           class="tab-pane"
         >
-          <div class="summary-grid">
-            <div class="summary-card">
-              <div
-                class="sc-val"
-                id="sc-gen"
-              >
-                —
+          <!-- Header: summary cards + toolbar -->
+          <div id="charts-header">
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div
+                  class="sc-val"
+                  id="sc-gen"
+                >
+                  —
+                </div>
+                <div class="sc-label">Generation</div>
               </div>
-              <div class="sc-label">Generation</div>
+              <div class="summary-card">
+                <div
+                  class="sc-val"
+                  id="sc-bestfit"
+                >
+                  —
+                </div>
+                <div class="sc-label">All-time Best Fitness</div>
+              </div>
+              <div class="summary-card">
+                <div
+                  class="sc-val"
+                  id="sc-bestmass"
+                >
+                  —
+                </div>
+                <div class="sc-label">All-time Best Mass</div>
+              </div>
+              <div class="summary-card">
+                <div
+                  class="sc-val"
+                  id="sc-totaldead"
+                >
+                  —
+                </div>
+                <div class="sc-label">Total Deaths</div>
+              </div>
             </div>
-            <div class="summary-card">
-              <div
-                class="sc-val"
-                id="sc-bestfit"
+            <div id="charts-toolbar">
+              <span class="ct-label">Range</span>
+              <button
+                class="ct-btn ct-range-btn ct-active"
+                data-range="50"
               >
-                —
-              </div>
-              <div class="sc-label">All-time Best Fitness</div>
-            </div>
-            <div class="summary-card">
-              <div
-                class="sc-val"
-                id="sc-bestmass"
+                50 gens
+              </button>
+              <button
+                class="ct-btn ct-range-btn"
+                data-range="100"
               >
-                —
-              </div>
-              <div class="sc-label">All-time Best Mass</div>
-            </div>
-            <div class="summary-card">
-              <div
-                class="sc-val"
-                id="sc-totaldead"
+                100 gens
+              </button>
+              <button
+                class="ct-btn ct-range-btn"
+                data-range="0"
               >
-                —
-              </div>
-              <div class="sc-label">Total Deaths</div>
+                All
+              </button>
+              <div class="ct-sep"></div>
+              <span class="ct-label"
+                >Showing: <span id="ct-gen-range">—</span></span
+              >
             </div>
           </div>
-          <div class="charts-grid">
-            <div
-              class="chart-card"
-              id="chart-fitness"
-            >
-              <div class="chart-title">Fitness over Generations</div>
-              <canvas id="cvs-fitness"></canvas>
-            </div>
-            <div
-              class="chart-card"
-              id="chart-mass"
-            >
-              <div class="chart-title">Mass over Generations</div>
-              <canvas id="cvs-mass"></canvas>
-            </div>
-            <div class="chart-card">
-              <div class="chart-title">
-                Population &amp; Deaths per Generation
+          <!-- Body: scrollable charts | species panel -->
+          <div id="charts-body">
+            <div id="charts-left">
+              <div class="charts-grid">
+                <div
+                  class="chart-card"
+                  id="chart-fitness"
+                >
+                  <div class="chart-title">Fitness over Generations</div>
+                  <canvas id="cvs-fitness"></canvas>
+                </div>
+                <div
+                  class="chart-card"
+                  id="chart-mass"
+                >
+                  <div class="chart-title">Mass over Generations</div>
+                  <canvas id="cvs-mass"></canvas>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-title">
+                    Population &amp; Deaths per Generation
+                  </div>
+                  <canvas id="cvs-pop"></canvas>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-title">
+                    Fitness Distribution (current gen)
+                  </div>
+                  <canvas id="cvs-dist"></canvas>
+                </div>
               </div>
-              <canvas id="cvs-pop"></canvas>
+              <div
+                class="chart-card"
+                id="chart-species"
+              >
+                <div class="chart-title">
+                  Species Population over Generations
+                </div>
+                <canvas id="cvs-species"></canvas>
+              </div>
             </div>
-            <div class="chart-card">
-              <div class="chart-title">Fitness Distribution (current gen)</div>
-              <canvas id="cvs-dist"></canvas>
+            <!-- Species panel -->
+            <div id="species-panel">
+              <div class="sp-header">
+                <span class="section-label">Species</span>
+                <span
+                  id="sp-count"
+                  style="font-size: 11px; color: var(--text-dim)"
+                  >—</span
+                >
+                <div class="spacer"></div>
+                <button
+                  id="sp-sort-btn"
+                  class="ct-btn"
+                >
+                  Count ↓
+                </button>
+              </div>
+              <div id="sp-list"></div>
             </div>
           </div>
         </div>
@@ -1242,6 +1773,21 @@
               </button>
             </div>
             <div id="cfg-status-world"></div>
+          </div>
+        </div>
+
+        <!-- ═══════ CONTROLS TAB ═══════ -->
+        <div
+          id="pane-controls"
+          class="tab-pane"
+        >
+          <div id="ctrl-scroll">
+            <div class="ctrl-info">
+              ℹ️ Changes apply at the start of the
+              <strong>next generation</strong>. Dirty values shown in
+              <span style="color: var(--accent)">orange</span>.
+            </div>
+            <!-- Cards are built dynamically by app.js _initControlsTab() -->
           </div>
         </div>
 

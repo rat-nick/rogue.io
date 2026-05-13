@@ -64,23 +64,26 @@ class SpatialGrid:
         self._bucket(new_key).add(entity_id)
         self._entity_key[entity_id] = new_key
 
-    def query_rect(self, x: float, y: float, w: float, h: float) -> set[int]:
-        """Return all entity IDs in grid cells overlapping the given world rect."""
+    def query_rect(self, x: float, y: float, w: float, h: float) -> list[int]:
+        """Return all entity IDs in grid cells overlapping the given world rect.
+        Returns a list, not a set — every entity lives in exactly one bucket so
+        results are already disjoint, and list.extend is much cheaper than
+        set.update for the common case of many small buckets."""
         cs = config.GRID_CELL_SIZE
         gx_min = int(x / cs)
         gx_max = int((x + w) / cs)
         gy_min = int(y / cs)
         gy_max = int((y + h) / cs)
-        result: set[int] = set()
+        result: list[int] = []
         grid = self._grid
         for gx in range(gx_min, gx_max + 1):
             for gy in range(gy_min, gy_max + 1):
                 bucket = grid.get((gx, gy))
                 if bucket:
-                    result.update(bucket)
+                    result.extend(bucket)
         return result
 
-    def query_radius(self, x: float, y: float, r: float) -> set[int]:
+    def query_radius(self, x: float, y: float, r: float) -> list[int]:
         """Return entity IDs within radius r of (x, y). Rect query + distance filter."""
         return self.query_rect(x - r, y - r, r * 2, r * 2)
 

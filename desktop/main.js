@@ -98,12 +98,13 @@ function buildMenu() {
 ipcMain.handle('start-training', async (_, opts) => {
   if (trainProcess) return { ok: false, error: 'Already running' };
 
-  // opts: { pythonPath, projectPath }
-  const python  = opts.pythonPath || 'python';
-  const projDir = opts.projectPath || path.join(__dirname, '..');
+  // opts: { pythonPath, projectPath, module }
+  const python     = opts.pythonPath || 'python';
+  const projDir    = opts.projectPath || path.join(__dirname, '..');
+  const serverMod  = opts.module || 'server.train';
 
   try {
-    trainProcess = spawn(python, ['-m', 'server.train'], {
+    trainProcess = spawn(python, ['-m', serverMod], {
       cwd: projDir,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

@@ -101,8 +101,8 @@ const State = (() => {
       if (!seenIds.has(id)) cells.delete(id);
     }
 
-    // Delta food
-    for (const f of foodNew) food.set(f[0], { id: f[0], x: f[1], y: f[2], colorIdx: f[3], mass: f[4] });
+    // Delta food (f[5]=vx, f[6]=vy for ejected pellets)
+    for (const f of foodNew) food.set(f[0], { id: f[0], x: f[1], y: f[2], colorIdx: f[3], mass: f[4], vx: f[5] || 0, vy: f[6] || 0 });
     for (const id of foodRemoved) food.delete(id);
 
     // Delta viruses
@@ -146,6 +146,23 @@ const State = (() => {
     return result;
   }
 
+  const EJECT_DECEL = 1.0; // must match server config.EJECT_DECEL
+
+  function tickFood(dtSec) {
+    for (const [, f] of food) {
+      if (f.vx === 0 && f.vy === 0) continue;
+      f.x += f.vx * dtSec;
+      f.y += f.vy * dtSec;
+      const decel = Math.max(0, 1.0 - EJECT_DECEL * dtSec);
+      f.vx *= decel;
+      f.vy *= decel;
+      if (Math.abs(f.vx) < 1.0 && Math.abs(f.vy) < 1.0) {
+        f.vx = 0;
+        f.vy = 0;
+      }
+    }
+  }
+
   return {
     get ready() {
       return ready;
@@ -187,6 +204,7 @@ const State = (() => {
     getName,
     getHue(pid) { return hueCache.get(pid) ?? -1; },
     getInterpolated,
+    tickFood,
     init,
     applyTick,
     reset() {

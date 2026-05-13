@@ -195,7 +195,33 @@ def _split_cell_by_virus(
     # How many new pieces can we create?
     slots_available = config.MAX_CELLS - len(player.cells)
     if slots_available <= 0:
-        return  # already at cap, virus has no effect
+        # At cell cap: destroy the cell and scatter its mass as food
+        try:
+            player.cells.remove(cell)
+        except ValueError:
+            return
+        cell_grid.remove(cell.id)
+        cell_map.pop(cell.id, None)
+
+        # Scatter mass as food pellets flung away from the virus
+        n_pellets = max(1, min(int(cell.mass / 10.0), 16))
+        mass_per_pellet = cell.mass / n_pellets
+        dvx = cell.x - virus.x
+        dvy = cell.y - virus.y
+        base_angle = math.atan2(dvy, dvx)
+        angle_step = 2.0 * math.pi / n_pellets
+        for i in range(n_pellets):
+            angle = base_angle + i * angle_step
+            speed = config.EJECT_SPEED * 0.8
+            food_mgr.spawn_ejected(
+                x=cell.x + math.cos(angle) * 15.0,
+                y=cell.y + math.sin(angle) * 15.0,
+                color_idx=0,
+                mass=mass_per_pellet,
+                vx=math.cos(angle) * speed,
+                vy=math.sin(angle) * speed,
+            )
+        return
 
     # We replace the current cell with (slots_available + 1) equal pieces
     # (+1 because the original cell itself becomes one piece)

@@ -11,7 +11,7 @@ TICK_RATE = 20          # ticks per second
 TICK_INTERVAL = 1.0 / TICK_RATE  # seconds
 
 # Food
-FOOD_TARGET = 6000
+FOOD_TARGET = 4000
 FOOD_MASS = 1.0
 REMNANT_DECAY_RATE = 0.10   # 20% of mass lost per second
 REMNANT_MIN_MASS = 1.0      # remnant removed when decayed below this
@@ -70,7 +70,7 @@ VIRUS_RADIUS = 100.0      # visual radius (fixed, not mass-based)
 VIRUS_FEED_THRESHOLD = 7  # number of ejects needed to make virus shoot a new one
 VIRUS_SHOOT_SPEED = 600.0 # speed of new virus ejected from fed virus
 VIRUS_CORNER_MARGIN = 100.0    # distance from edge for corner viruses
-VIRUS_TARGET = 32         # target number of viruses to maintain
+VIRUS_TARGET = 8         # target number of viruses to maintain
 VIRUS_SPLIT_THRESHOLD = 150.0  # cells larger than this get split by virus
 
 # Spatial grid
@@ -99,5 +99,5 @@ BOT_BURST_INTERVAL = 30.0  # seconds between bursts
 # NEAT
 NEAT_SAVE_PATH = "neat_population.pkl"
 
-# Perception version — 1 = legacy 16-sector (177 inputs), 2 = raycast+quadrant (57 inputs)
+# Perception version — 1 = legacy 16-sector (177 inputs), 2 = raycast+quadrant (74 inputs)
 PERCEPTION_VERSION = 2

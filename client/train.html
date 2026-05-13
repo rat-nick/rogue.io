@@ -338,6 +338,46 @@
         transition: width 0.4s ease;
         pointer-events: none;
       }
+
+      /* ── Mode toggle ── */
+      #mode-toggle {
+        display: flex;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 2px;
+        gap: 2px;
+      }
+      .mode-btn {
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.45);
+        font-size: 10px;
+        font-weight: bold;
+        padding: 3px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.15s;
+        letter-spacing: 0.5px;
+      }
+      .mode-btn.active {
+        background: #fa4;
+        color: #000;
+      }
+      .mode-btn:hover:not(.active) {
+        color: #fff;
+      }
+
+      /* ── PPO stats panel ── */
+      #ppo-panel {
+        padding: 10px 16px;
+        border-bottom: 1px solid #252525;
+        flex-shrink: 0;
+        background: rgba(100, 200, 255, 0.04);
+        display: none;
+      }
+      .ppo-loss {
+        color: #4cf;
+      }
     </style>
   </head>
   <body>
@@ -373,12 +413,28 @@
       <!-- ── Sidebar ── -->
       <div id="sidebar">
         <div id="sidebar-header">
-          <span>🧬 TRAINING</span>
-          <a
-            href="spectate.html"
-            id="spectate-link"
-            >Spectate →</a
-          >
+          <span id="mode-title">🧬 NEAT</span>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <div id="mode-toggle">
+              <button
+                class="mode-btn active"
+                id="mode-neat"
+              >
+                NEAT
+              </button>
+              <button
+                class="mode-btn"
+                id="mode-ppo"
+              >
+                PPO
+              </button>
+            </div>
+            <a
+              href="spectate.html"
+              id="spectate-link"
+              >Spectate →</a
+            >
+          </div>
         </div>
 
         <!-- Generation info -->
@@ -403,9 +459,62 @@
           <div id="time-bar-wrap"><div id="time-bar"></div></div>
         </div>
 
+        <!-- PPO stats panel (hidden in NEAT mode) -->
+        <div id="ppo-panel">
+          <div class="section-title">PPO TRAINING</div>
+          <div class="stat-row">
+            <span class="stat-key">Rollout</span>
+            <span
+              class="stat-val highlight"
+              id="ppo-rollout"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Env steps</span>
+            <span
+              class="stat-val"
+              id="ppo-env-steps"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Policy loss</span>
+            <span
+              class="stat-val ppo-loss"
+              id="ppo-pg-loss"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Value loss</span>
+            <span
+              class="stat-val ppo-loss"
+              id="ppo-vf-loss"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Entropy</span>
+            <span
+              class="stat-val ppo-loss"
+              id="ppo-entropy"
+              >—</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Approx KL</span>
+            <span
+              class="stat-val ppo-loss"
+              id="ppo-kl"
+              >—</span
+            >
+          </div>
+        </div>
+
         <!-- Fitness & mass stats -->
         <div id="stats-panel">
-          <div class="stat-row">
+          <div class="stat-row neat-only">
             <span class="stat-key">Top fitness</span>
             <span
               class="stat-val highlight"
@@ -445,7 +554,7 @@
               >—</span
             >
           </div>
-          <div class="stat-row">
+          <div class="stat-row neat-only">
             <span class="stat-key">Deaths</span>
             <span
               class="stat-val"

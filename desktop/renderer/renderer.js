@@ -186,6 +186,23 @@ const Renderer = (() => {
         }
       }
     }
+
+    // Second pass: draw species highlight rings on top of all cells
+    const selSpecies = window.selectedSpecies;
+    const spMap = window.playerSpeciesMap;
+    if (selSpecies !== null && selSpecies !== undefined && spMap) {
+      ctx.setLineDash([16 / vp.scale, 8 / vp.scale]);
+      ctx.strokeStyle = 'rgba(255,220,0,0.9)';
+      ctx.lineWidth   = 4 / vp.scale;
+      for (const c of interpolated) {
+        if (spMap.get(c.playerId) !== selSpecies) continue;
+        const r = Math.sqrt(c.mass) * 10;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, r + 10 / vp.scale, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
   }
 
   function render(vp, alpha) {
