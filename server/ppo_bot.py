@@ -11,6 +11,7 @@ rollout buffer.  The controller:
 """
 from __future__ import annotations
 
+import logging
 import math
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,55 @@ from .bot import (
     _V2_MERGE_TIMER_MAX,
 )
 from .ppo_agent import ActorCritic, RolloutBuffer, PPOTrainer, N_OBS
+
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Observation sanity-check specification
+# Each entry: (slice_or_index, lo, hi, name)
+# ---------------------------------------------------------------------------
+_OBS_CHECKS: list[tuple] = [
+    (slice(0, 5),   0.0, 1.0,  "interoceptive[0:5]"),
+    # 8 rays × 7 channels; all should be [0,1] except prey_mass [0,~0.8]
+    (slice(5, 61),  0.0, 1.0,  "rays[5:61]"),
+    (slice(61, 65), 0.0, 1.0,  "quad_food[61:65]"),
+    (slice(65, 69), 0.0, 1.0,  "quad_threat[65:69]"),
+    (slice(69, 72), 0.0, 1.0,  "contextual[69:72]"),
+    (slice(72, 74), -1.0, 1.0, "velocity[72:74]"),
+    # 16 cells × 3: (rel_x, rel_y) ∈ [-1,1], mass ∈ [0,1] — all within [-1,1]
+    (slice(74, 122), -1.0, 1.0, "cell_body[74:122]"),
+]
+
+
+def check_obs(obs: np.ndarray, label: str = "") -> bool:
+    """Validate a (B, N_OBS) observation array.
+
+    Logs a WARNING for each channel group that has out-of-range or non-finite
+    values and returns True if everything is clean, False otherwise.
+    """
+    prefix = f"[obs check{' ' + label if label else ''}]"
+    ok = True
+
+    nan_mask = ~np.isfinite(obs)
+    if nan_mask.any():
+        locs = np.argwhere(nan_mask)
+        log.warning("%s NaN/Inf in %d cells — first few: %s", prefix, len(locs), locs[:5].tolist())
+        ok = False
+
+    for sel, lo, hi, name in _OBS_CHECKS:
+        chunk = obs[:, sel]
+        c_min = float(chunk.min())
+        c_max = float(chunk.max())
+        if c_min < lo - 1e-4 or c_max > hi + 1e-4:
+            log.warning(
+                "%s %s out of [%.2f, %.2f]: min=%.4f max=%.4f mean=%.4f",
+                prefix, name, lo, hi, c_min, c_max, float(chunk.mean()),
+            )
+            ok = False
+
+    if ok:
+        log.debug("%s all %d channels OK (B=%d)", prefix, obs.shape[1], obs.shape[0])
+    return ok
 
 if TYPE_CHECKING:
     from .game import GameWorld
@@ -53,6 +103,7 @@ class PPOBotController:
         buffer:  RolloutBuffer | None = None,
         device:  torch.device | str = "cpu",
         inference_only: bool = False,
+        obs_check_interval: int = 200,
     ) -> None:
         self.n_bots  = n_bots
         self.model   = model
@@ -62,6 +113,8 @@ class PPOBotController:
         self.inference_only = inference_only
         self.step    = 0          # current position within the rollout
         self.n_steps = buffer.n_steps if buffer is not None else 0
+        self.obs_check_interval = obs_check_interval  # run check_obs every N steps; 0 = disabled
+        self._obs_check_counter = 0
 
         # player_id -> per-bot state dict (same keys as NEAT BotController)
         self._state: dict[int, dict] = {}
@@ -255,7 +308,14 @@ class PPOBotController:
         obs_np = _build_inputs_batch_v2(
             world, plan_pids, bot_alive, bot_cx, bot_cy, bot_mass, bot_largest,
             bot_scan, intero, last_vx, last_vy, B,
-        )  # (B, 74) float32
+        )  # (B, 122) float32
+
+        # ---- Observation sanity check (periodic) ----
+        if self.obs_check_interval > 0:
+            self._obs_check_counter += 1
+            if self._obs_check_counter >= self.obs_check_interval:
+                self._obs_check_counter = 0
+                check_obs(obs_np, label=f"step={self.step}")
 
         # ---- Policy inference ----
         obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)

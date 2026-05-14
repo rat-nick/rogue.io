@@ -260,9 +260,6 @@ class PPOTrainingWorld:
                     ejected_ids, self.food_mgr, self.virus_mgr, self.virus_grid
                 )
 
-        # ---- Corner instant-death ----
-        self._handle_corner_deaths()
-
         # ---- Handle dead bots (respawn immediately) ----
         dead = [p for p in self.players.values() if not p.cells and p.id in self._bot_ids]
         for player in dead:
@@ -287,27 +284,6 @@ class PPOTrainingWorld:
             self._pending_virus_new.extend(virus_new)
         if virus_removed:
             self._pending_virus_removed.extend(virus_removed)
-
-    def _handle_corner_deaths(self) -> None:
-        ckr_sq = config.CORNER_KILL_RADIUS ** 2
-        corners = [
-            (0.0, 0.0),
-            (float(config.WORLD_W), 0.0),
-            (0.0, float(config.WORLD_H)),
-            (float(config.WORLD_W), float(config.WORLD_H)),
-        ]
-        for player in list(self.players.values()):
-            doomed = [
-                cell for cell in player.cells
-                if any(
-                    (cell.x - cx) ** 2 + (cell.y - cy) ** 2 <= ckr_sq
-                    for cx, cy in corners
-                )
-            ]
-            for cell in doomed:
-                player.cells.remove(cell)
-                self.cell_grid.remove(cell.id)
-                self.cell_map.pop(cell.id, None)
 
     # ------------------------------------------------------------------
     # Async tick loop

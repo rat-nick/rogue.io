@@ -1,7 +1,7 @@
 """PPO actor-critic network, rollout buffer, and update logic.
 
 Architecture:
-  Shared MLP trunk (74 → 256 → 256) with tanh activations.
+  Shared MLP trunk (122 → 256 → 256) with tanh activations.
   Actor head:
     - Continuous branch: linear → tanh → (move_x, move_y) direction mean;
       log-std is a learned parameter vector (not input-dependent).
@@ -31,7 +31,7 @@ from torch.distributions import Normal, Bernoulli
 # Observation / action dimensions
 # ---------------------------------------------------------------------------
 
-N_OBS       = 74   # v2 perception inputs (matches _build_inputs_batch_v2 output)
+N_OBS       = 122  # v2 perception inputs (matches _build_inputs_batch_v2 output)
 N_CONT      = 2    # move_x, move_y (Gaussian)
 N_DISC      = 2    # split, eject  (Bernoulli)
 N_ACTIONS   = N_CONT + N_DISC   # 4 — same layout as NEAT outputs

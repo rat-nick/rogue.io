@@ -269,30 +269,6 @@ class GameWorld:
             if ejected_ids:
                 physics.check_ejected_virus_feeding(ejected_ids, self.food_mgr, self.virus_mgr, self.virus_grid)
 
-        # Corner kill zone: remove any cell within CORNER_KILL_RADIUS of a world corner
-        _ckr_sq = config.CORNER_KILL_RADIUS ** 2
-        _corners = [
-            (0.0, 0.0),
-            (float(config.WORLD_W), 0.0),
-            (0.0, float(config.WORLD_H)),
-            (float(config.WORLD_W), float(config.WORLD_H)),
-        ]
-        corner_killed_bots: set[int] = set()
-        for player in list(self.players.values()):
-            doomed = [
-                cell for cell in player.cells
-                if any(
-                    (cell.x - cx) ** 2 + (cell.y - cy) ** 2 <= _ckr_sq
-                    for cx, cy in _corners
-                )
-            ]
-            for cell in doomed:
-                player.cells.remove(cell)
-                self.cell_grid.remove(cell.id)
-                self.cell_map.pop(cell.id, None)
-                if player.id in self._bot_ids:
-                    corner_killed_bots.add(player.id)
-
         # Handle dead players (no cells left)
         dead_players = [p for p in self.players.values() if not p.cells]
         for player in dead_players:
@@ -309,8 +285,7 @@ class GameWorld:
                     if bs is not None:
                         bs['deaths'] += 1
                     genome, fitness = self._bot_controller.unregister(player.id)
-                    # Corner-killed bots don't reproduce — skip adding genome to pool
-                    if genome is not None and player.id not in corner_killed_bots:
+                    if genome is not None:
                         self._genome_pool.add(genome, fitness)
                         self._bot_death_count += 1
                         if self._bot_death_count % 50 == 0:

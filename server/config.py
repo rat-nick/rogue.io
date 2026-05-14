@@ -3,15 +3,15 @@ HOST = "0.0.0.0"
 PORT = 8765
 
 # World
-WORLD_W = 20000
-WORLD_H = 20000
+WORLD_W = 15000
+WORLD_H = 15000
 
 # Tick rate
 TICK_RATE = 20          # ticks per second
 TICK_INTERVAL = 1.0 / TICK_RATE  # seconds
 
 # Food
-FOOD_TARGET = 4000
+FOOD_TARGET = 8000
 FOOD_MASS = 1.0
 REMNANT_DECAY_RATE = 0.10   # 20% of mass lost per second
 REMNANT_MIN_MASS = 1.0      # remnant removed when decayed below this

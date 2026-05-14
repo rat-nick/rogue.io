@@ -1079,9 +1079,9 @@ def _build_inputs_batch_v2(
     vel_x = np.clip(last_vx * _V2_INV_VEL_NORM, -1.0, 1.0)
     vel_y = np.clip(last_vy * _V2_INV_VEL_NORM, -1.0, 1.0)
 
-    # ---- Assemble (B, 74): layout mirrors _build_inputs_v2 ----
-    # 5 intero + 8 rays × 7 (food,prey,prey_mass,threat,threat_mass,virus,wall) + 4 qfood + 4 qthreat + 3 ctx + 2 vel
-    out = np.empty((B, 74), dtype=np.float32)
+    # ---- Assemble (B, 122): layout mirrors _build_inputs_v2 ----
+    # 5 intero + 8 rays × 7 (food,prey,prey_mass,threat,threat_mass,virus,wall) + 4 qfood + 4 qthreat + 3 ctx + 2 vel + MAX_CELLS*3 cell body
+    out = np.empty((B, 122), dtype=np.float32)
     out[:, 0:5] = intero
     base = 5
     for r in range(_V2_NUM_RAYS):
@@ -1100,6 +1100,24 @@ def _build_inputs_batch_v2(
     out[:, 71] = danger_score
     out[:, 72] = vel_x
     out[:, 73] = vel_y
+
+    # ---- Per-cell body features (74..121): sorted by mass desc, padded with zeros ----
+    out[:, 74:] = 0.0
+    for i, pid in enumerate(plan_pids):
+        if not bot_alive[i]:
+            continue
+        player = world.players.get(pid)
+        if player is None:
+            continue
+        cx_i = bot_cx[i]
+        cy_i = bot_cy[i]
+        inv_scan_i = 1.0 / max(float(bot_scan[i]), 1.0)
+        sorted_c = sorted(player.cells, key=lambda c: c.mass, reverse=True)
+        for ci, sc in enumerate(sorted_c[:_MAX_CELLS]):
+            col = 74 + ci * 3
+            out[i, col]     = float(np.clip((sc.x - cx_i) * inv_scan_i, -1.0, 1.0))
+            out[i, col + 1] = float(np.clip((sc.y - cy_i) * inv_scan_i, -1.0, 1.0))
+            out[i, col + 2] = float(math.log1p(sc.mass) / _V2_MAX_MASS_LOG)
 
     # Zero out dead bots so the network sees no stale activations
     if not bot_alive.all():
