@@ -120,6 +120,65 @@ class ActorCritic(nn.Module):
         model.to(device)
         return model
 
+    def to_numpy_policy(self) -> "NumpyPolicy":
+        """Export weights as a pure-numpy policy for torch-free inference."""
+        sd = {k: v.detach().cpu().numpy() for k, v in self.state_dict().items()}
+        return NumpyPolicy(sd)
+
+
+# ---------------------------------------------------------------------------
+# Pure-numpy inference policy (no PyTorch dependency at runtime)
+# ---------------------------------------------------------------------------
+
+class NumpyPolicy:
+    """Stateless actor that runs the trained ActorCritic using only numpy.
+
+    Weights are extracted from a trained ActorCritic via
+    ``ActorCritic.to_numpy_policy()`` or loaded directly from a .pt file via
+    ``NumpyPolicy.from_checkpoint(path)``.
+
+    ``act(obs)`` expects a float32 (B, N_OBS) array and returns a float32
+    (B, 4) action array [move_x, move_y, split, eject] — identical layout to
+    the PyTorch path, but deterministic (uses mean / 0.5-threshold, no sampling).
+    """
+
+    def __init__(self, state_dict: dict[str, np.ndarray]) -> None:
+        sd = state_dict
+        # Shared trunk: two Linear+Tanh layers
+        self._w0 = sd["shared.0.weight"]   # (hidden, n_obs)
+        self._b0 = sd["shared.0.bias"]     # (hidden,)
+        self._w2 = sd["shared.2.weight"]   # (hidden, hidden)
+        self._b2 = sd["shared.2.bias"]     # (hidden,)
+        # Actor heads
+        self._wa_mean   = sd["actor_mean.weight"]    # (N_CONT, hidden)
+        self._ba_mean   = sd["actor_mean.bias"]      # (N_CONT,)
+        self._wa_logits = sd["actor_logits.weight"]  # (N_DISC, hidden)
+        self._ba_logits = sd["actor_logits.bias"]    # (N_DISC,)
+
+    @classmethod
+    def from_checkpoint(cls, path: str | os.PathLike) -> "NumpyPolicy":
+        """Load directly from a .pt checkpoint without instantiating ActorCritic."""
+        import torch as _torch
+        sd_torch = _torch.load(path, map_location="cpu", weights_only=True)
+        sd_np = {k: v.numpy() for k, v in sd_torch.items()}
+        return cls(sd_np)
+
+    def act(self, obs: np.ndarray) -> np.ndarray:
+        """Deterministic forward pass.  Returns (B, 4) float32 actions.
+
+        move_x/y are the raw Gaussian means (tanh-squashed by the game loop).
+        split/eject are 1 if the logit > 0, else 0.
+        """
+        obs = np.asarray(obs, dtype=np.float32)
+        # Shared trunk
+        h = np.tanh(obs @ self._w0.T + self._b0)
+        h = np.tanh(h   @ self._w2.T + self._b2)
+        # Continuous: mean of move direction
+        move = h @ self._wa_mean.T + self._ba_mean        # (B, 2)
+        # Discrete: threshold logits at 0
+        disc = (h @ self._wa_logits.T + self._ba_logits > 0.0).astype(np.float32)  # (B, 2)
+        return np.concatenate([move, disc], axis=-1).astype(np.float32)
+
 
 # ---------------------------------------------------------------------------
 # Rollout buffer

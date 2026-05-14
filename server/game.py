@@ -68,21 +68,22 @@ class GameWorld:
         # Bots
         self._bot_ids: set[int] = set()
         if bot_mode == 'ppo':
-            from .ppo_agent import ActorCritic, N_OBS
+            from .ppo_agent import NumpyPolicy
             from .ppo_bot import PPOBotController
             from .ppo_train import PPO_SAVE_PATH
-            import torch
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
             n_bots = config.BOT_START
             try:
-                model = ActorCritic.load(PPO_SAVE_PATH, device=device)
-                logger.info(f"[PPO] Loaded checkpoint from {PPO_SAVE_PATH}")
+                model = NumpyPolicy.from_checkpoint(PPO_SAVE_PATH)
+                logger.info(f"[PPO] Loaded numpy checkpoint from {PPO_SAVE_PATH}")
             except Exception:
+                # Fall back to a random ActorCritic (requires torch)
+                from .ppo_agent import ActorCritic, N_OBS
+                import torch
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
                 model = ActorCritic(n_obs=N_OBS).to(device)
-                logger.info(f"[PPO] No checkpoint found — starting fresh policy")
-            n_bots = config.BOT_START
+                logger.info("[PPO] No checkpoint found — starting fresh policy (torch)")
             self._bot_controller = PPOBotController(
-                n_bots=n_bots, model=model, inference_only=True, device=device
+                n_bots=n_bots, model=model, inference_only=True,
             )
             self._genome_pool = None
             self._bot_death_count = 0

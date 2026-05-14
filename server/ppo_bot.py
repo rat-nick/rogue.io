@@ -28,7 +28,7 @@ from .bot import (
     _V2_MAX_MASS_LOG,
     _V2_MERGE_TIMER_MAX,
 )
-from .ppo_agent import ActorCritic, RolloutBuffer, PPOTrainer, N_OBS
+from .ppo_agent import ActorCritic, NumpyPolicy, RolloutBuffer, PPOTrainer, N_OBS
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class PPOBotController:
     def __init__(
         self,
         n_bots:  int,
-        model:   ActorCritic,
+        model:   ActorCritic | NumpyPolicy,
         trainer: PPOTrainer | None = None,
         buffer:  RolloutBuffer | None = None,
         device:  torch.device | str = "cpu",
@@ -110,10 +110,10 @@ class PPOBotController:
         self.trainer = trainer
         self.buffer  = buffer
         self.device  = torch.device(device)
-        self.inference_only = inference_only
-        self.step    = 0          # current position within the rollout
+        self.inference_only = inference_only or isinstance(model, NumpyPolicy)
+        self.step    = 0
         self.n_steps = buffer.n_steps if buffer is not None else 0
-        self.obs_check_interval = obs_check_interval  # run check_obs every N steps; 0 = disabled
+        self.obs_check_interval = obs_check_interval
         self._obs_check_counter = 0
 
         # player_id -> per-bot state dict (same keys as NEAT BotController)
@@ -318,28 +318,31 @@ class PPOBotController:
                 check_obs(obs_np, label=f"step={self.step}")
 
         # ---- Policy inference ----
-        obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
-        self.model.eval()
-        with torch.no_grad():
-            actions_t, logprobs_t, _, values_t = self.model.get_action_and_value(obs_t)
+        if isinstance(self.model, NumpyPolicy):
+            actions_np = self.model.act(obs_np)  # (B, 4) float32, no torch
+        else:
+            obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
+            self.model.eval()
+            with torch.no_grad():
+                actions_t, logprobs_t, _, values_t = self.model.get_action_and_value(obs_t)
+            actions_np = actions_t.cpu().numpy()
 
-        # ---- Store rollout step ----
-        if not self.inference_only:
+        # ---- Store rollout step (torch path only) ----
+        if not self.inference_only and not isinstance(self.model, NumpyPolicy):
             self.buffer.add(
                 self.step,
                 obs_np,
-                actions_t,
-                logprobs_t,
+                actions_t,    # type: ignore[possibly-undefined]
+                logprobs_t,   # type: ignore[possibly-undefined]
                 rewards,
                 dones,
-                values_t,
+                values_t,     # type: ignore[possibly-undefined]
             )
             self._last_obs   = obs_np
             self._last_dones = dones
             self.step       += 1
 
         # ---- Apply actions to game ----
-        actions_np = actions_t.cpu().numpy()
         target_dist = _TARGET_DIST
         for i, pid in enumerate(plan_pids):
             if not bot_alive[i]:
@@ -383,11 +386,13 @@ class PPOBotController:
         """Bootstrap values for unfinished episodes and run the PPO update.
 
         Returns training stats dict from PPOTrainer.update().
+        Not applicable when using NumpyPolicy (inference-only).
         """
-        if self._last_obs is None:
+        if self._last_obs is None or isinstance(self.model, NumpyPolicy):
             return {}
 
         # Bootstrap values for still-alive bots
+        assert isinstance(self.model, ActorCritic)
         obs_t = torch.as_tensor(self._last_obs, dtype=torch.float32, device=self.device)
         self.model.eval()
         with torch.no_grad():
